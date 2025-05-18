@@ -24,7 +24,20 @@ const errorResponse = (res, statusCode = 500, message = 'Internal Server Error')
   });
 };
 
+// Formatted error response object
+const getErrorResponse = (title = 'Error', detail = 'Something went wrong', code = 'error') => {
+  return {
+    success: false,
+    error: {
+      title,
+      detail,
+      code
+    }
+  };
+};
+
 module.exports = {
   ApiError,
   errorResponse,
+  getErrorResponse,
 };

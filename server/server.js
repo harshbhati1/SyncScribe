@@ -9,9 +9,19 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
 const path = require('path');
+const { initializeFirebase } = require('./src/config/firebase.config');
 
 // Load environment variables
 dotenv.config();
+
+// Initialize Firebase Admin SDK
+try {
+  initializeFirebase();
+  console.log('Firebase Admin SDK initialized successfully in server.js');
+} catch (error) {
+  console.error('Failed to initialize Firebase Admin SDK:', error);
+  // Continue with server initialization, individual routes will handle auth failures
+}
 
 // Initialize Express app
 const app = express();
@@ -33,15 +43,11 @@ app.get('/api/health', (req, res) => {
 // Test route to verify Firebase and Gemini configurations
 app.get('/api/test-config', async (req, res) => {
   try {
-    // Import Firebase config
-    const { initializeFirebase } = require('./src/config/firebase.config');
-      // Import Gemini config
+    // Import Gemini config
     const { initializeGemini } = require('./src/config/gemini.config');
-      // Initialize Firebase
-    const admin = initializeFirebase();
     
     let geminiResponse = "Gemini API test skipped to avoid rate limiting";
-      // Skip actual Gemini testing to avoid rate limits during setup
+    // Skip actual Gemini testing to avoid rate limits during setup
     geminiResponse = "Gemini API configuration loaded but test skipped to avoid rate limits. You can implement actual Gemini API calls in your application logic.";
     
     // Initialize Gemini without making an API call
@@ -89,6 +95,12 @@ app.use((err, req, res, next) => {
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });
+
+// Import routes
+const authRoutes = require('./src/routes/auth.routes');
+
+// Route middleware
+app.use('/api/auth', authRoutes);
 
 // Handle 404 routes
 app.use((req, res) => {
