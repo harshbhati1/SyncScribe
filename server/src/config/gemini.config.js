@@ -1,36 +1,98 @@
 /**
  * Google Gemini API Configuration
- * This file initializes the Gemini model with API key from environment variables
+ * This file initializes the Gemini model with API key from environment variables.
  */
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const dotenv = require('dotenv');
 
-// Load environment variables
 dotenv.config();
 
-// Initialize Gemini API
+// --- DEBUGGING ---
+// Set to true to force re-initialization on every call to initializeGemini()
+// Set to false to use the cached instance (normal behavior)
+const FORCE_REINIT_GEMINI_FOR_DEBUG = false; 
+// --- END DEBUGGING ---
+
+let geminiInstance = null; // Stores the cached initialized instance
+
 const initializeGemini = () => {
+  if (!FORCE_REINIT_GEMINI_FOR_DEBUG && geminiInstance) {
+    return geminiInstance;
+  }
+
+  console.log(`[GeminiConfig] ${FORCE_REINIT_GEMINI_FOR_DEBUG ? 'Forcing re-initialization' : 'Attempting initialization (or first time)'}.`);
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      // Initialize only the Flash model as per project requirements (Gemini 2.0 Flash)
-    const geminiFlash = genAI.getGenerativeModel({ 
-      model: 'gemini-2.0-flash',  // Use the exact model name without 'latest'
-      generationConfig: {
-        maxOutputTokens: 100,  // Further reduce output to minimize token usage
-        temperature: 0.7
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn('[GeminiConfig] Warning: GEMINI_API_KEY is not set. Switching to simulation mode.');
+      const simInstance = { genAI: null, geminiFlash: null, isSimulationMode: true };
+      if (FORCE_REINIT_GEMINI_FOR_DEBUG) return simInstance;
+      geminiInstance = simInstance;
+      return geminiInstance;
+    } else {
+      // Verify API key format (don't log actual key)
+      const isValidKeyFormat = apiKey.length > 20; // Simple length check
+      console.log('[GeminiConfig] GEMINI_API_KEY found. Valid format: ', isValidKeyFormat);
+      if (isValidKeyFormat) {
+        console.log('[GeminiConfig] Key pattern:', 
+                   apiKey.substring(0, 4) + '...' + 
+                   apiKey.substring(apiKey.length - 4));
+      } else {
+        console.warn('[GeminiConfig] Warning: API key format looks suspicious (too short)');
+      }
+    }
+    
+    console.log('[GeminiConfig] NODE_ENV:', process.env.NODE_ENV);
+    console.log('[GeminiConfig] USE_REAL_GEMINI:', process.env.USE_REAL_GEMINI);    // Initialize the Google Generative AI with the API key
+    const genAI = new GoogleGenerativeAI(apiKey);
+    
+    // Determine which model to use - prefer gemini-1.5-flash for audio transcription
+    // as it might be more stable than the latest versions
+    const modelName = process.env.GEMINI_MODEL_NAME || 'gemini-1.5-flash'; 
+    console.log(`[GeminiConfig] Attempting to initialize Gemini model: ${modelName}`);
+    
+    // Create just one model instance that will be reused
+    // Use minimal configuration to avoid sending unnecessary parameters
+    const geminiFlashModel = genAI.getGenerativeModel({ 
+      model: modelName,
+      // Use the most minimal config possible for audio transcription
+      generationConfig: { 
+        temperature: 0.1
       }
     });
     
-    console.log('Gemini API initialized successfully');
+    // Validate model availability (without using await since we're in a sync function)
+    console.log(`[GeminiConfig] Gemini model instance created. (No validation performed in sync function)`);
     
-    return {
+    // We'll do a simple ping test in the transcription routes before first use
+    // --- END MODIFICATION ---
+    
+    console.log(`[GeminiConfig] ✅ Gemini client and model ('${modelName}') initialized successfully. Real API mode enabled.`);
+    const newInstance = {
       genAI,
-      geminiFlash
+      geminiFlash: geminiFlashModel,
+      isSimulationMode: false
     };
+    if (FORCE_REINIT_GEMINI_FOR_DEBUG) return newInstance;
+    geminiInstance = newInstance;
+    return geminiInstance;
+
   } catch (error) {
-    console.error('Error initializing Gemini API:', error);
-    throw error;
+    console.error('[GeminiConfig] ❌ Error initializing Gemini API client or getting model:', error.message);
+    if (process.env.NODE_ENV === 'development') {
+        console.error('[GeminiConfig] Full initialization error:', error);
+    }
+    console.warn('[GeminiConfig] Gemini API initialization failed. Falling back to simulation mode.');
+    
+    const errorInstance = {
+      genAI: null,
+      geminiFlash: null,
+      isSimulationMode: true
+    };
+    if (FORCE_REINIT_GEMINI_FOR_DEBUG) return errorInstance;
+    geminiInstance = errorInstance;
+    return geminiInstance;
   }
 };
 

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { 
   GoogleAuthProvider, 
   signInWithPopup, 
@@ -45,9 +45,8 @@ export const AuthProvider = ({ children }) => {
       throw error;
     }
   };
-
   // Refresh token periodically (every 55 minutes - tokens expire after 1 hour)
-  const refreshToken = async () => {
+  const refreshToken = useCallback(async () => {
     if (currentUser) {
       try {
         const token = await currentUser.getIdToken(true);
@@ -57,8 +56,7 @@ export const AuthProvider = ({ children }) => {
         console.error('Error refreshing token:', error);
       }
     }
-  };
-
+  }, [currentUser]); // Add currentUser as a dependency
   // Listen for auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -83,7 +81,7 @@ export const AuthProvider = ({ children }) => {
 
     // Clean up subscription
     return () => unsubscribe();
-  }, []);
+  }, [refreshToken]); // Added refreshToken as dependency
 
   const value = {
     currentUser,
