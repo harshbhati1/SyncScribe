@@ -5,65 +5,163 @@
 
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const authMiddleware = require('../middlewares/auth.middleware');
 const { getErrorResponse } = require('../utils/error.utils');
 const { initializeGemini } = require('../config/gemini.config');
+
+// Configure multer for file uploads
+const storage = multer.memoryStorage();
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 25 * 1024 * 1024 } // 25MB limit
+});
 
 // Configure Gemini for transcription
 const { geminiFlash } = initializeGemini();
 
 // Process audio for transcription
-router.post('/process', authMiddleware, async (req, res) => {
+router.post('/process', authMiddleware, upload.single('audio_data'), async (req, res) => {
   try {
-    // For FormData uploads, the audio file would be in req.file
-    // For JSON API, the audio data would be in req.body.audioChunk
+    // Check if we received audio data
+    const audioFile = req.file;
     const { audioChunk, meetingId } = req.body;
     
-    if (!audioChunk && !req.file) {
+    // Determine which type of audio data we're working with
+    if (!audioFile && !audioChunk) {
       return res.status(400).json(
         getErrorResponse('Bad Request', 'No audio data provided')
       );
     }
-
-    // Process the audio chunk with Gemini
-    // For the prototype, we'll simulate the Gemini transcription
-    // In a production app, you'd use proper audio processing with Gemini API
     
-    // Simulate processing delay
-    await new Promise(resolve => setTimeout(resolve, 500));
+    let audioData;
+    let mimeType;
     
-    // Generate sample phrases for more realistic transcription simulation
-    const phrases = [
-      "I think we should prioritize the user experience.",
-      "Let's schedule a follow-up meeting next week.",
-      "The analytics data shows significant improvement in user retention.",
-      "We need to address the bug in the authentication flow.",
-      "I agree with that approach, it aligns with our goals.",
-      "What's the timeline for launching these new features?",
-      "Could you share the documentation with the team?",
-      "The client feedback has been mostly positive.",
-      "We should integrate the new API by the end of the sprint.",
-      "Let's make sure we're addressing all the accessibility concerns.",
-    ];
+    // Handle FormData file uploads
+    if (audioFile) {
+      // Convert buffer to base64 for Gemini
+      audioData = audioFile.buffer.toString('base64');
+      mimeType = audioFile.mimetype || 'audio/webm';
+      console.log(`Processing audio file of type: ${mimeType}, size: ${audioFile.size} bytes`);
+    } 
+    // Handle JSON direct base64 audio data
+    else if (audioChunk) {
+      audioData = audioChunk;
+      mimeType = 'audio/webm'; // Default mime type for JSON submissions
+      console.log('Processing direct audio chunk data');
+    }
     
-    // Select a random phrase for simulation
-    const randomPhrase = phrases[Math.floor(Math.random() * phrases.length)];
+    // If Gemini API is not available in development mode, use simulation
+    if (process.env.NODE_ENV === 'development' && !process.env.USE_REAL_GEMINI) {
+      console.log('Using transcription simulation mode');
+      
+      // Simulate processing delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Generate sample phrases for simulation
+      const phrases = [
+        "I think we should prioritize the user experience.",
+        "Let's schedule a follow-up meeting next week.",
+        "The analytics data shows significant improvement in user retention.",
+        "We need to address the bug in the authentication flow.",
+        "I agree with that approach, it aligns with our goals.",
+        "What's the timeline for launching these new features?",
+        "Could you share the documentation with the team?",
+        "The client feedback has been mostly positive.",
+        "We should integrate the new API by the end of the sprint.",
+        "Let's make sure we're addressing all the accessibility concerns.",
+      ];
+      
+      // Select a random phrase for simulation
+      const randomPhrase = phrases[Math.floor(Math.random() * phrases.length)];
+      
+      // Generate a simple transcription based on timestamp
+      const timestamp = new Date().toISOString();
+      const segment = {
+        id: `segment-${Date.now()}`,
+        timestamp,
+        text: randomPhrase,
+        confidence: 0.85 + (Math.random() * 0.15) // Random confidence between 0.85-1.0
+      };
+      
+      return res.status(200).json({
+        success: true,
+        segment
+      });
+    }
     
-    // Generate a simple transcription based on timestamp
-    const timestamp = new Date().toISOString();
-    const segment = {
-      id: `segment-${Date.now()}`,
-      timestamp,
-      text: randomPhrase,
-      confidence: 0.85 + (Math.random() * 0.15) // Random confidence between 0.85-1.0
-    };
-
-    // In a real app, you'd save this to a database
-    // For now, we just return the simulated transcription
-    return res.status(200).json({
-      success: true,
-      segment
-    });
+    // Process with Gemini API
+    try {
+      console.log('Processing audio with Gemini 2.0 Flash model');
+      
+      // Create Gemini prompt for audio transcription
+      const result = await geminiFlash.generateContent({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: "Please accurately transcribe the following audio segment." },
+              { 
+                inline_data: {
+                  mime_type: mimeType,
+                  data: audioData
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0,
+          topP: 1,
+          topK: 32,
+          maxOutputTokens: 256,
+        }
+      });
+      
+      // Extract transcribed text
+      const response = await result.response;
+      const transcribedText = response.text().trim();
+      
+      console.log('Gemini transcription result:', transcribedText);
+        // Create segment data
+      const segment = {
+        id: `segment-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        text: transcribedText || "Sorry, no speech detected in this segment.",
+        confidence: 0.9 // Gemini doesn't provide confidence scores currently
+      };
+      
+      // In a real app, you'd save this to a database
+      // For now, we just return the transcription
+      return res.status(200).json({
+        success: true,
+        segment
+      });
+    } catch (geminiError) {
+      console.error('Error with Gemini API:', geminiError);
+      
+      // Fallback to simulation on Gemini error
+      const phrases = [
+        "Sorry, I couldn't transcribe that audio segment.",
+        "There seems to be an issue with speech recognition.",
+        "The audio wasn't clear enough to transcribe accurately.",
+      ];
+      
+      const errorPhrase = phrases[Math.floor(Math.random() * phrases.length)];
+      
+      const segment = {
+        id: `segment-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        text: errorPhrase,
+        confidence: 0.5,
+        error: true
+      };
+      
+      return res.status(200).json({
+        success: true,
+        segment
+      });
+    }
   } catch (error) {
     console.error('Error processing audio for transcription:', error);
     return res.status(500).json(

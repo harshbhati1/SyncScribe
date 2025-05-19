@@ -27,8 +27,6 @@ import {
   Chip
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import MicIcon from '@mui/icons-material/Mic';
-import StopIcon from '@mui/icons-material/Stop';
 import SaveIcon from '@mui/icons-material/Save';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -39,6 +37,7 @@ import SummarizeIcon from '@mui/icons-material/Summarize';
 import InsightsIcon from '@mui/icons-material/Insights';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import apiRequest, { transcriptionAPI } from '../services/api';
+import MeetingRecorder from './MeetingRecorder';
 
 // Styled components for Transcription UI
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
@@ -699,35 +698,7 @@ const Transcription = () => {
                   }
                 </div>
               </Box>
-            )}
-          </Box>
-          
-          {!isRecording && (
-            <Button
-              variant="contained"
-              color="primary"
-              startIcon={<MicIcon />}
-              onClick={startRecording}
-              disabled={isProcessing}
-            >
-              Record
-            </Button>
-          )}
-            {isRecording && (
-            <Button
-              variant="contained"
-              color="error"
-              startIcon={<StopIcon />}
-              onClick={stopRecording}
-              disabled={isProcessing}
-            >
-              Stop
-            </Button>
-          )}
-          
-          {isProcessing && (
-            <CircularProgress size={24} sx={{ ml: 2 }} />
-          )}
+            )}          </Box>
         </Toolbar>
         
         <Tabs 
@@ -769,21 +740,28 @@ const Transcription = () => {
         </Alert>
       )}
       
-      {/* Transcript Tab */}
-      <TabPanel hidden={tabValue !== 0} value={tabValue} index={0}>
-        {isProcessing && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-            <CircularProgress size={24} />
-          </Box>
-        )}
+      {/* Transcript Tab */}      <TabPanel hidden={tabValue !== 0} value={tabValue} index={0}>
+        {/* Enhanced Meeting Recorder Component */}
+        <MeetingRecorder
+          onTranscriptionUpdate={(newTranscript, segment) => {
+            // Update full transcription
+            setTranscription(newTranscript);
+            
+            // Add new segment if provided
+            if (segment) {
+              setTranscriptionSegments(prev => [...prev, segment]);
+            }
+          }}
+        />
         
+        {/* Display Transcript Section */}
         {transcription ? (
           <>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
-              <IconButton color="primary" onClick={saveTranscription} disabled={isProcessing || isRecording} size="small">
+              <IconButton color="primary" onClick={saveTranscription} disabled={isProcessing} size="small">
                 <SaveIcon fontSize="small" />
               </IconButton>
-              <IconButton color="error" onClick={resetTranscription} disabled={isProcessing || isRecording} size="small">
+              <IconButton color="error" onClick={resetTranscription} disabled={isProcessing} size="small">
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </Box>
@@ -792,7 +770,7 @@ const Transcription = () => {
               variant="outlined" 
               sx={{ 
                 p: 2, 
-                height: 'calc(100vh - 240px)',
+                height: 'calc(100vh - 500px)', // Adjusted height for recorder
                 overflowY: 'auto',
                 backgroundColor: '#f9f9f9'
               }}
@@ -808,7 +786,7 @@ const Transcription = () => {
                 color="primary"
                 startIcon={<SummarizeIcon />}
                 onClick={generateSummary}
-                disabled={isProcessing || isRecording || !transcription}
+                disabled={isProcessing || !transcription}
               >
                 Generate Summary
               </ActionButton>
@@ -820,20 +798,10 @@ const Transcription = () => {
             flexDirection: 'column', 
             alignItems: 'center', 
             justifyContent: 'center',
-            height: 'calc(100vh - 240px)'
+            height: 'calc(100vh - 500px)'
           }}>
-            <RecordingIndicator isRecording={isRecording}>
-              <RecordingDot isRecording={isRecording} />
-              <Typography variant="body2" color={isRecording ? "error" : "textSecondary"}>
-                {isRecording ? "Recording in progress..." : "No active recording"}
-              </Typography>
-            </RecordingIndicator>
-            
             <Typography variant="body1" color="textSecondary" align="center">
-              {isRecording 
-                ? "TwinMind is listening in the background. Leave it on during your meeting."
-                : "Press the Record button to start capturing your meeting."
-              }
+              Use the recording controls above to start capturing your meeting.
             </Typography>
           </Box>
         )}
