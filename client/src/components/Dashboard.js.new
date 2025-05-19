@@ -1,3 +1,4 @@
+// filepath: c:\Users\harsh\OneDrive\Desktop\TwinMind\client\src\components\Dashboard.js
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../services/api';
@@ -22,19 +23,13 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemIcon,  Badge,
+  ListItemIcon,
+  Badge,
   Stack,
   Menu,
   MenuItem,
   Tooltip,
-  Drawer,
-  InputBase,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-  TextField
+  Drawer
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -52,30 +47,30 @@ import ForumIcon from '@mui/icons-material/Forum';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
 import MenuIcon from '@mui/icons-material/Menu';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
 
 // Custom styled components to match the ChatGPT-style design
-const StyledAppBar = styled(AppBar)(({ theme }) => ({
-  backgroundColor: '#ffffff',
+const StyledAppBar = styled(AppBar)(({ theme, sidebarOpen }) => ({
+  backgroundColor: theme.palette.background.paper,
   boxShadow: 'none',
-  borderBottom: `1px solid #e4e4e7`,
-  color: '#434343',
+  borderBottom: `1px solid ${theme.palette.divider}`,
+  color: theme.palette.text.primary,
   position: 'sticky',
-  width: '100%',
-  transition: theme.transitions.create(['width'], {
+  width: sidebarOpen ? 'calc(100% - 280px)' : '100%', 
+  marginLeft: sidebarOpen ? '280px' : 0, 
+  transition: theme.transitions.create(['width', 'margin-left'], {
     easing: theme.transitions.easing.sharp,
     duration: theme.transitions.duration.enteringScreen,
   }),
-  zIndex: theme.zIndex.appBar - 1, // Lower z-index than Drawer
 }));
 
 const Sidebar = styled(Box)(({ theme }) => ({
   width: '280px',
   height: '100vh',
-  position: 'relative',
-  backgroundColor: '#fafafa',
-  borderRight: `1px solid #e4e4e7`,
+  position: 'fixed',
+  left: 0,
+  top: 0,
+  backgroundColor: '#f9f9f9',
+  borderRight: `1px solid ${theme.palette.divider}`,
   display: 'flex',
   flexDirection: 'column',
   padding: theme.spacing(2),
@@ -84,14 +79,13 @@ const Sidebar = styled(Box)(({ theme }) => ({
     easing: theme.transitions.easing.sharp,
     duration: theme.transitions.duration.enteringScreen,
   }),
+  zIndex: theme.zIndex.drawer,
 }));
 
-// Updated NavSection to better handle the scrollable favorites and recent meetings
 const NavSection = styled(Box)(({ theme, scrollable, flexGrow }) => ({
   marginBottom: theme.spacing(2),
   transition: 'max-height 0.3s ease',
   position: 'relative',
-  textAlign: 'left',
   ...(flexGrow && {
     flexGrow: 1,
     display: 'flex',
@@ -99,7 +93,7 @@ const NavSection = styled(Box)(({ theme, scrollable, flexGrow }) => ({
     overflow: 'hidden',
   }),
   ...(scrollable && {
-    maxHeight: '150px', // Height for about 3 items
+    maxHeight: flexGrow ? 'none' : 'calc(35vh)',
     overflowY: 'auto',
     paddingRight: theme.spacing(0.5),
     '&::-webkit-scrollbar': {
@@ -115,10 +109,7 @@ const NavSection = styled(Box)(({ theme, scrollable, flexGrow }) => ({
     '&::-webkit-scrollbar-thumb:hover': {
       background: '#9e9e9e',
     }
-  }),
-  '& > *': {
-    textAlign: 'left',
-  }
+  })
 }));
 
 const TabPanel = styled(Box)(({ theme }) => ({
@@ -149,17 +140,12 @@ const NewChatButton = styled(Button)(({ theme }) => ({
   textTransform: 'none',
   width: '100%',
   justifyContent: 'flex-start',
-  textAlign: 'left',
-  border: '1px solid #e4e4e7',
+  border: '1px solid rgba(0, 0, 0, 0.1)',
   backgroundColor: '#ffffff',
-  color: '#434343',
+  color: theme.palette.text.primary,
   marginBottom: theme.spacing(2),
   '&:hover': {
-    backgroundColor: '#f4f4f5',
-  },
-  '& .MuiButton-startIcon': {
-    marginRight: theme.spacing(1.5),
-    color: '#ff7300',
+    backgroundColor: '#f5f5f5',
   },
 }));
 
@@ -170,9 +156,6 @@ const NavTitle = styled(Typography)(({ theme }) => ({
   textTransform: 'uppercase',
   letterSpacing: '0.5px',
   padding: theme.spacing(1, 1.5),
-  textAlign: 'left',
-  width: '100%',
-  display: 'block',
 }));
 
 const NavItem = styled(Button)(({ theme, active }) => ({
@@ -183,20 +166,12 @@ const NavItem = styled(Button)(({ theme, active }) => ({
   textTransform: 'none',
   width: '100%',
   justifyContent: 'flex-start',
-  textAlign: 'left',
   marginBottom: theme.spacing(0.5),
-  color: active ? '#0b4f75' : '#434343',
-  backgroundColor: active ? '#81c2f71a' : 'transparent',
+  color: active ? theme.palette.primary.main : theme.palette.text.primary,
+  backgroundColor: active ? 'rgba(30, 98, 235, 0.08)' : 'transparent',
   '&:hover': {
-    backgroundColor: active ? '#81c2f71a' : '#f4f4f5',
+    backgroundColor: active ? 'rgba(30, 98, 235, 0.12)' : 'rgba(0, 0, 0, 0.04)',
   },
-  '& .MuiButton-startIcon': {
-    marginRight: theme.spacing(1.5),
-  },
-  '& .MuiButton-label': {
-    justifyContent: 'flex-start',
-    textAlign: 'left',
-  }
 }));
 
 const CaptureButton = styled(Button)(({ theme }) => ({
@@ -204,18 +179,16 @@ const CaptureButton = styled(Button)(({ theme }) => ({
   padding: theme.spacing(1, 3),
   fontWeight: 500,
   textTransform: 'none',
-  backgroundColor: '#ff7300',
-  boxShadow: '0px 4px 10px rgba(252, 158, 79, 0.3)',
+  boxShadow: '0px 4px 10px rgba(30, 98, 235, 0.3)',
   '&:hover': {
-    backgroundColor: '#ed974c',
-    boxShadow: '0px 6px 15px rgba(252, 158, 79, 0.4)',
+    boxShadow: '0px 6px 15px rgba(30, 98, 235, 0.4)',
   },
 }));
 
 const StyledBadge = styled(Badge)(({ theme }) => ({
   '& .MuiBadge-badge': {
-    backgroundColor: '#4da6d6',
-    color: '#4da6d6',
+    backgroundColor: '#44b700',
+    color: '#44b700',
     boxShadow: `0 0 0 2px ${theme.palette.background.paper}`,
     '&::after': {
       position: 'absolute',
@@ -233,7 +206,8 @@ const StyledBadge = styled(Badge)(({ theme }) => ({
     '0%': {
       transform: 'scale(.8)',
       opacity: 1,
-    },    '100%': {
+    },
+    '100%': {
       transform: 'scale(2.4)',
       opacity: 0,
     },
@@ -243,17 +217,12 @@ const StyledBadge = styled(Badge)(({ theme }) => ({
 const Dashboard = () => {
   const { currentUser, logOut } = useAuth();
   const navigate = useNavigate();
-  const [profileData, setProfileData] = useState(null);  
-  const [error, setError] = useState('');
+  const [profileData, setProfileData] = useState(null);  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const [meetings] = useState([]);
-  const [sidebarOpen, setSidebarOpen] = useState(false); // Default closed on all devices
-
-  // We don't need to adjust sidebar visibility on resize anymore
-  // since it will always overlay content when opened
-    
-  // Organize meetings by date
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+    // Organize meetings by date
   const [favorites, setFavorites] = useState([
     { id: 'fav1', title: 'Weekly standup meeting', date: '2025-05-15' },
     { id: 'fav2', title: 'Product roadmap discussion', date: '2025-05-10' },
@@ -272,14 +241,9 @@ const Dashboard = () => {
 
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   const [activeItem, setActiveItem] = useState(null);
-  
-  // States for dialog controls
-  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [newMeetingTitle, setNewMeetingTitle] = useState(''); 
-    // Function to toggle sidebar overlay
+
+  // Function to toggle sidebar
   const toggleSidebar = () => {
-    // Toggle sidebar visibility on all devices
     setSidebarOpen(!sidebarOpen);
   };
 
@@ -292,12 +256,11 @@ const Dashboard = () => {
     setMenuAnchorEl(event.currentTarget);
     setActiveItem(meeting);
   };
+
   const handleMenuClose = () => {
     setMenuAnchorEl(null);
     setActiveItem(null);
-  };
-  
-  const toggleFavorite = (meeting) => {
+  };  const toggleFavorite = (meeting) => {
     // Check if meeting is already in favorites
     const isFavorite = favorites.some(fav => fav.id === meeting.id);
     
@@ -305,103 +268,11 @@ const Dashboard = () => {
       // Remove from favorites
       setFavorites(favorites.filter(fav => fav.id !== meeting.id));
     } else {
-      // Add to favorites - no limit
+      // Add to favorites - no limit now
       setFavorites([...favorites, meeting]);
     }
     
     handleMenuClose();
-  };
-    // Function to open the rename dialog
-  const handleRenameOpen = () => {
-    if (activeItem) {
-      setNewMeetingTitle(activeItem.title);
-      setRenameDialogOpen(true);
-      // Close menu but don't reset activeItem until dialog is processed
-      setMenuAnchorEl(null);
-    } else {
-      console.error('No active item to rename');
-      setError('Error: No meeting selected for renaming');
-    }
-  };  // Function to close the rename dialog
-  const handleRenameClose = () => {
-    setRenameDialogOpen(false);
-    // Clean up the activeItem when dialog is closed without renaming
-    setActiveItem(null);
-  };
-  
-  // Function to handle the rename meeting action
-  const handleRenameMeeting = () => {
-    if (!newMeetingTitle.trim()) return;
-    
-    // Check if activeItem exists
-    if (!activeItem) {
-      console.error('No active item to rename');
-      setError('Error: No meeting selected for renaming');
-      setRenameDialogOpen(false);
-      return;
-    }
-    
-    // Update the meeting title in both favorites and recentMeetings arrays
-    const isFavorite = favorites.some(fav => fav.id === activeItem.id);
-    
-    if (isFavorite) {
-      setFavorites(favorites.map(fav => 
-        fav.id === activeItem.id ? { ...fav, title: newMeetingTitle } : fav
-      ));
-    }
-    
-    setRecentMeetings(recentMeetings.map(meeting => 
-      meeting.id === activeItem.id ? { ...meeting, title: newMeetingTitle } : meeting
-    ));
-    
-    // Update localStorage if this is the currently active meeting
-    const currentMeetingId = localStorage.getItem('currentMeetingId');
-    if (currentMeetingId === activeItem.id) {
-      localStorage.setItem('currentMeetingTitle', newMeetingTitle);
-    }
-    
-    setRenameDialogOpen(false);
-    // Now we can clear the activeItem
-    setActiveItem(null);
-    setError(''); // Clear any previous errors
-  };
-  // Function to open the delete confirmation dialog
-  const handleDeleteOpen = () => {
-    setDeleteDialogOpen(true);
-    // Close menu but don't reset activeItem until dialog is processed
-    setMenuAnchorEl(null);
-  };
-
-  // Function to close the delete confirmation dialog
-  const handleDeleteClose = () => {
-    setDeleteDialogOpen(false);
-    // Clean up the activeItem when dialog is closed without deleting
-    setActiveItem(null);
-  };
-
-  // Function to handle the delete meeting action
-  const handleDeleteMeeting = () => {
-    // Check if activeItem exists
-    if (!activeItem) {
-      console.error('No active item to delete');
-      setError('Error: No meeting selected for deletion');
-      setDeleteDialogOpen(false);
-      return;
-    }
-
-    // Remove from favorites if it exists there
-    setFavorites(favorites.filter(fav => fav.id !== activeItem.id));
-    
-    // Remove from recent meetings
-    setRecentMeetings(recentMeetings.filter(meeting => meeting.id !== activeItem.id));
-    
-    setDeleteDialogOpen(false);
-    // Now we can clear the activeItem
-    setActiveItem(null);
-    
-    // Show a temporary success message
-    setError('Meeting deleted successfully');
-    setTimeout(() => setError(''), 3000); // Clear after 3 seconds
   };
   // Helper function to format date for display
   const formatDate = (dateString) => {
@@ -459,29 +330,6 @@ const Dashboard = () => {
     fetchProfileData();
   }, []);
 
-  // Sync meeting names from localStorage when returning to Dashboard
-  useEffect(() => {
-    const storedMeetingId = localStorage.getItem('currentMeetingId');
-    const storedMeetingTitle = localStorage.getItem('currentMeetingTitle');
-    
-    if (storedMeetingId && storedMeetingTitle) {
-      // Check if this meeting exists in favorites or recent meetings
-      const isFavorite = favorites.some(fav => fav.id === storedMeetingId);
-      const isRecent = recentMeetings.some(meeting => meeting.id === storedMeetingId);
-      
-      // Update the title if needed
-      if (isFavorite) {
-        setFavorites(favorites.map(fav => 
-          fav.id === storedMeetingId ? { ...fav, title: storedMeetingTitle } : fav
-        ));
-      }
-      
-      if (isRecent) {
-        setRecentMeetings(recentMeetings.map(meeting => 
-          meeting.id === storedMeetingId ? { ...meeting, title: storedMeetingTitle } : meeting        ));
-      }
-    }
-  }, []); // Empty dependency array means this runs once on component mount
   const handleLogout = async () => {
     try {
       await logOut();
@@ -491,90 +339,60 @@ const Dashboard = () => {
       setError('Failed to log out');
     }
   };
-  
-  return (
-    <Box sx={{ flexGrow: 1, bgcolor: 'background.default', minHeight: '100vh', display: 'flex' }}>      {/* Left Sidebar - ChatGPT Style - Now always overlays content */}
+    return (
+    <Box sx={{ flexGrow: 1, bgcolor: 'background.default', minHeight: '100vh', display: 'flex' }}>
+      {/* Left Sidebar - ChatGPT Style */}
       <Drawer
-        variant="temporary"
+        variant="persistent"
         anchor="left"
         open={sidebarOpen}
-        onClose={toggleSidebar}
-        ModalProps={{
-          keepMounted: true, // Better mobile performance
-        }}        PaperProps={{
+        PaperProps={{
           sx: {
             width: '280px',
-            bgcolor: '#fafafa',
+            bgcolor: '#f9f9f9',
             border: 'none',
             boxShadow: '1px 0 5px rgba(0,0,0,0.05)'
           }
         }}
-        sx={(theme) => ({
-          '& .MuiDrawer-paper': { 
-            boxSizing: 'border-box', 
-            width: '280px',
-            zIndex: theme.zIndex.appBar + 1, // Higher than AppBar
-          },
-          // Use semi-transparent backdrop on all screen sizes
-          '& .MuiBackdrop-root': {
-            backgroundColor: '#08040417',
-          }
-        })}
       >
-        <Sidebar>          {/* Sidebar header with hamburger menu only */}
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            width: '100%', 
-            mb: 2 
-          }}>
-            <IconButton 
-              size="small" 
+        <Sidebar>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+            <Typography 
+              variant="h6" 
+              component="div" 
               sx={{ 
-                p: 0.5, 
-                '&:hover': { 
-                  backgroundColor: 'rgba(0, 0, 0, 0.04)' 
-                },
-                transition: 'all 0.2s ease'
+                fontWeight: 700,
+                background: 'linear-gradient(45deg, #1E62EB 30%, #7e57c2 90%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent'
               }}
-              onClick={toggleSidebar}
-              aria-label="toggle sidebar"
             >
-              <MenuIcon fontSize="small" />
-            </IconButton>
+              TwinMind
+            </Typography>
           </Box>
           
-          {/* New Meeting Button */}
           <NewChatButton
             startIcon={<MicIcon />}
-            onClick={() => {
-              // For a new meeting, set default title and clear previous ID
-              localStorage.setItem('currentMeetingTitle', 'New Meeting');
-              localStorage.removeItem('currentMeetingId');
-              navigate('/transcription');
-              if (window.innerWidth < 960) {
-                toggleSidebar(); // Close sidebar on mobile after selection
-              }
-            }}
+            onClick={() => navigate('/transcription')}
           >
             New Meeting
           </NewChatButton>
-
-          {/* Container for sidebar sections with flex layout */}
+          
+          {/* Sidebar content with Favorites first, then Recent Meetings, and profile at bottom */}
           <Box sx={{ 
             display: 'flex', 
             flexDirection: 'column', 
-            height: 'calc(100vh - 170px)',  // Account for header, new meeting button, and profile at bottom
-            overflow: 'hidden'
+            height: 'calc(100vh - 170px)'  // Account for header, new chat button, and profile
           }}>
-            {/* FAVORITES section - limited to 3 visible items by default */}
-            <Box>
-              <NavTitle>FAVORITES</NavTitle>
+            {/* Favorites section - moved to top */}
+            <Box sx={{ mb: 3 }}>
+              <NavTitle>Favorites</NavTitle>
               <NavSection 
-                scrollable={favorites.length > 3} 
+                scrollable={favorites.length > 5} 
                 sx={{ 
-                  maxHeight: favorites.length <= 3 ? 'auto' : '150px',
-                  overflowY: favorites.length > 3 ? 'auto' : 'visible'
+                  pb: 1, 
+                  maxHeight: 'calc(40vh)',
+                  overflowY: 'auto'
                 }}
               >
                 {favorites.map(fav => (
@@ -588,33 +406,20 @@ const Dashboard = () => {
                     }}
                   >
                     <NavItem 
-                      onClick={() => {
-                        // Store meeting info in localStorage before navigating
-                        localStorage.setItem('currentMeetingTitle', fav.title);
-                        localStorage.setItem('currentMeetingId', fav.id);
-                        navigate(`/transcription/${fav.id}`);
-                        if (window.innerWidth < 960) {
-                          toggleSidebar(); // Close sidebar on mobile after selection
-                        }
-                      }}
+                      onClick={() => navigate(`/transcription/${fav.id}`)}
                       sx={{ 
                         flexGrow: 1,
                         mb: 0,
                         pr: 1,
-                        textAlign: 'left',
-                        justifyContent: 'flex-start',
                       }}
                     >
                       <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                        <StarIcon sx={{ fontSize: 18, mr: 1.5, color: '#ff7300', flexShrink: 0 }} />
+                        <StarIcon sx={{ fontSize: 18, mr: 1.5, color: '#F9A825' }} />
                         <Box sx={{ 
                           flexGrow: 1, 
                           overflow: 'hidden', 
                           textOverflow: 'ellipsis', 
-                          whiteSpace: 'nowrap',
-                          textAlign: 'left',
-                          justifyContent: 'flex-start',
-                          display: 'block'
+                          whiteSpace: 'nowrap'
                         }}>
                           {fav.title}
                         </Box>
@@ -630,25 +435,11 @@ const Dashboard = () => {
                   </Box>
                 ))}
               </NavSection>
-              {favorites.length > 3 && (
-                <Box 
-                  sx={{                    position: 'relative', 
-                    bottom: '24px', 
-                    left: 0, 
-                    width: '100%', 
-                    height: '24px', 
-                    background: 'linear-gradient(to top, rgba(250,250,250,0.9), rgba(250,250,250,0))',
-                    pointerEvents: 'none',
-                    zIndex: 1,
-                    marginBottom: '-24px'
-                  }} 
-                />
-              )}
             </Box>
-
-            {/* RECENT MEETINGS - Taking all remaining space */}
+            
+            {/* Recent meetings section */}
             <Box sx={{ flexGrow: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-              <NavTitle>RECENT MEETINGS</NavTitle>
+              <NavTitle>Recent Meetings</NavTitle>
               <Box sx={{ overflowY: 'auto', flexGrow: 1 }}>
                 {Object.entries(groupedRecentMeetings).map(([date, meetings]) => (
                   <Box key={date}>
@@ -677,33 +468,20 @@ const Dashboard = () => {
                         }}
                       >
                         <NavItem 
-                          onClick={() => {
-                            // Store meeting info in localStorage before navigating
-                            localStorage.setItem('currentMeetingTitle', meeting.title);
-                            localStorage.setItem('currentMeetingId', meeting.id);
-                            navigate(`/transcription/${meeting.id}`);
-                            if (window.innerWidth < 960) {
-                              toggleSidebar(); // Close sidebar on mobile after selection
-                            }
-                          }}
+                          onClick={() => navigate(`/transcription/${meeting.id}`)}
                           sx={{ 
                             flexGrow: 1,
                             mb: 0,
                             pr: 1,
-                            textAlign: 'left',
-                            justifyContent: 'flex-start',
                           }}
                         >
                           <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                            <ForumIcon sx={{ fontSize: 18, mr: 1.5, opacity: 0.7, flexShrink: 0 }} />
+                            <ForumIcon sx={{ fontSize: 18, mr: 1.5, opacity: 0.7 }} />
                             <Box sx={{ 
                               flexGrow: 1, 
                               overflow: 'hidden', 
                               textOverflow: 'ellipsis', 
-                              whiteSpace: 'nowrap',
-                              textAlign: 'left',
-                              justifyContent: 'flex-start',
-                              display: 'block'
+                              whiteSpace: 'nowrap'
                             }}>
                               {meeting.title}
                             </Box>
@@ -723,7 +501,7 @@ const Dashboard = () => {
               </Box>
             </Box>
           </Box>
-
+          
           {/* User profile at bottom */}
           <Box sx={{ mt: 'auto', pt: 2, borderTop: '1px solid rgba(0,0,0,0.08)' }}>
             {currentUser && (
@@ -747,28 +525,26 @@ const Dashboard = () => {
             )}
           </Box>
         </Sidebar>
-      </Drawer>      {/* Main Content - Always takes full width now */}      
-      <Box sx={(theme) => ({ 
-        flexGrow: 1,
-        transition: theme.transitions.create(['width'], {
+      </Drawer>
+      
+      {/* Main Content */}
+      <Box sx={{ 
+        flexGrow: 1, 
+        ml: sidebarOpen ? '280px' : 0,
+        transition: (theme) => theme.transitions.create('margin', {
           easing: theme.transitions.easing.sharp,
           duration: theme.transitions.duration.enteringScreen,
         }),
-        width: '100%'
-      })}>
-        {/* Header App Bar */}        <StyledAppBar position="static">          <Toolbar>
+      }}>
+        {/* Header App Bar */}
+        <StyledAppBar position="static" sidebarOpen={sidebarOpen}>
+          <Toolbar>
             <IconButton
               edge="start"
               color="inherit"
               aria-label="toggle sidebar"
               onClick={toggleSidebar}
-              sx={{ 
-                mr: 2,
-                '&:hover': { 
-                  backgroundColor: 'rgba(0, 0, 0, 0.04)' 
-                },
-                transition: 'all 0.2s ease'
-              }}
+              sx={{ mr: 2 }}
             >
               <MenuIcon />
             </IconButton>
@@ -776,42 +552,55 @@ const Dashboard = () => {
               <Typography variant="h6" fontWeight="bold">
                 My Meetings
               </Typography>
-            </Box>              <Box sx={{ display: 'flex', alignItems: 'center' }}>              <Typography 
-                variant="h6" 
-                component="div" 
-                sx={{ 
-                  fontWeight: 700,
-                  background: 'linear-gradient(45deg, #ff7300 30%, #fc9e4f 90%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent'
-                }}
-              >
-                TwinMind
-              </Typography>
-            </Box>          </Toolbar>
+            </Box>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <IconButton size="small" color="inherit" sx={{ mr: 1 }}>
+                <HelpOutlineIcon fontSize="small" />
+              </IconButton>
+              <IconButton size="small" color="inherit">
+                <AutorenewIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </Toolbar>
           
-          {/* Tab Navigation */}<Tabs 
+          <Box sx={{ px: 2, pt: 1, pb: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              Improve Your Second Brain & Focus with TwinMind
+            </Typography>
+            <Typography variant="h6" fontWeight="bold" sx={{ mb: 1 }}>
+              Building Your Second Brain
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+              <Avatar sx={{ width: 24, height: 24, mr: 1 }} src={currentUser?.photoURL} />
+              {profileData ? 
+                <Typography variant="caption" color="text.secondary">
+                  {profileData.user.name || currentUser.displayName} • 10/15 Notes
+                </Typography>
+               : 
+                <Typography variant="caption" color="text.secondary">
+                  {currentUser?.displayName} • Getting Started
+                </Typography>
+              }
+            </Box>
+          </Box>
+          
+          {/* Tab Navigation */}
+          <Tabs 
             value={tabValue} 
             onChange={handleTabChange}
             variant="fullWidth" 
             sx={{ 
-              '& .MuiTabs-indicator': {
-                backgroundColor: '#ff7300',
-              },
               '& .MuiTab-root': {
                 minWidth: 'auto',
                 fontSize: '0.85rem',
                 fontWeight: 500,
                 textTransform: 'none',
-                py: 1.5,
-                color: '#71717a',
-                '&.Mui-selected': {
-                  color: '#0b4f75',
-                }
+                py: 1.5
               } 
             }}
           >
-            <Tab label="Questions" />
+            <Tab label="Memories" />
             <Tab label="Calendar" />
           </Tabs>
         </StyledAppBar>
@@ -823,48 +612,31 @@ const Dashboard = () => {
               Today, May 18
             </Typography>
               {/* Meeting Cards */}
-            {meetings.length === 0 ? (              <Box sx={{ 
+            {meetings.length === 0 ? (
+              <Box sx={{ 
                 display: 'flex', 
                 flexDirection: 'column', 
                 alignItems: 'center', 
                 justifyContent: 'center',
                 mt: 4,
                 mb: 6,
-                height: '40vh',
-                width: '100%',
-                px: 2
+                height: '30vh' 
               }}>
-                <Typography 
-                  variant="h4" 
-                  align="center" 
-                  sx={{ 
-                    mb: 3,
-                    fontWeight: 700,
-                    fontSize: '1.8rem',
-                    background: 'linear-gradient(45deg, #0b4f75 30%, #ff7300 90%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    textShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                    letterSpacing: '0.2px',
-                    maxWidth: '600px',
-                    mx: 'auto',
-                    display: 'block',
-                    width: '100%'
-                  }}
-                >
-                  Ask questions about your past meetings and conversations!
+                <Typography variant="body1" color="text.secondary" align="center" sx={{ mb: 2 }}>
+                  No memories yet. Create your first one!
                 </Typography>
+                <img 
+                  src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik0xOSA4QzIwLjY1NjkgOCAyMiA2LjY1Njg1IDIyIDVDMjIgMy4zNDMxNSAyMC42NTY5IDIgMTkgMkMxNy4zNDMxIDIgMTYgMy4zNDMxNSAxNiA1QzE2IDYuNjU2ODUgMTcuMzQzMSA4IDE5IDhaIiBzdHJva2U9IiMxRTYyRUIiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PHBhdGggZD0iTTE5IDE2QzIwLjY1NjkgMTYgMjIgMTQuNjU2OSAyMiAxM0MyMiAxMS4zNDMxIDIwLjY1NjkgMTAgMTkgMTBDMTcuMzQzMSAxMCAxNiAxMS4zNDMxIDE2IDEzQzE2IDE0LjY1NjkgMTcuMzQzMSAxNiAxOSAxNloiIHN0cm9rZT0iI0ZGOTgwMCIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48cGF0aCBkPSJNMTIgMTZDMTMuNjU2OSAxNiAxNSAxNC42NTY5IDE1IDEzQzE1IDExLjM0MzEgMTMuNjU2OSAxMCAxMiAxM0MwLjM0MzE1IDE4IDkgMTEuMzg0MzEgOSAxM0M5IDE0LjY1NjkgMTAuMzQzMSAxNiAxMiAxNloiIHN0cm9rZT0iIzFFNjJFQiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48cGF0aCBkPSJNNSA4QzYuNjU2ODUgOCA4IDYuNjU2ODUgOCA1QzggMy4zNDMxNSA2LjY1Njg1IDIgNSAyQzMuMzQzMTUgMiAyIDMuMzQzMTUgMiA1QzIgNi42NTY4NSAzLjM0MzE1IDggNSA4WiIgc3Ryb2tlPSIjRkY5ODAwIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==" 
+                  alt="No memories" 
+                  style={{ width: 80, height: 80, opacity: 0.6, marginBottom: '16px' }} 
+                />
               </Box>
             ) : (
               // Map through meetings
-              meetings.map((meeting) => (                <MeetingCard 
+              meetings.map((meeting) => (
+                <MeetingCard 
                   key={meeting.id}
-                  onClick={() => {
-                    // Store meeting info in localStorage before navigating
-                    localStorage.setItem('currentMeetingTitle', meeting.title);
-                    localStorage.setItem('currentMeetingId', meeting.id);
-                    navigate(`/transcription/${meeting.id}`);
-                  }}
+                  onClick={() => navigate(`/transcription/${meeting.id}`)}
                   sx={{ cursor: 'pointer' }}
                 >
                   <CardContent sx={{ pb: 2, '&:last-child': { pb: 2 } }}>
@@ -891,51 +663,32 @@ const Dashboard = () => {
                       </Box>
                     </Box>
                   </CardContent>
-                </MeetingCard>              ))
-            )}            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-              <Paper
-                component="form"
+                </MeetingCard>
+              ))
+            )}
+              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+              <Button
+                variant="outlined"
+                startIcon={<SearchIcon fontSize="small" />}
                 sx={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  px: 2,
-                  py: 0.5,
-                  mr: 1,
-                  width: '100%',
-                  maxWidth: '400px',
-                  borderRadius: '20px',
-                  border: '1px solid #e4e4e7',
-                  backgroundColor: '#fafafa',
-                  '&:hover': {
-                    borderColor: '#a1a1aa',
-                    boxShadow: '0 1px 5px rgba(0,0,0,0.05)'
-                  }
-                }}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  // Handle search submission here
+                  mr: 1, 
+                  borderRadius: '20px', 
+                  fontSize: '0.8rem',
+                  color: 'text.secondary',
+                  borderColor: 'divider',
+                  textTransform: 'none',
+                  py: 1
                 }}
               >
-                <InputBase
-                  sx={{ ml: 1, flex: 1, fontSize: '0.85rem' }}
-                  placeholder="Ask a question about your meetings..."
-                  inputProps={{ 'aria-label': 'search meetings' }}
-                />
-                <IconButton type="submit" sx={{ p: '5px', color: '#0b4f75' }} aria-label="search">
-                  <SearchIcon fontSize="small" />
-                </IconButton>
-              </Paper>
-                <CaptureButton
+                Ask All Memories
+              </Button>
+              
+              <CaptureButton
                 variant="contained"
                 color="primary"
                 startIcon={<MicIcon fontSize="small" />}
                 sx={{ fontSize: '0.8rem', py: 1 }}
-                onClick={() => {
-                  // For a new meeting, set default title and clear previous ID
-                  localStorage.setItem('currentMeetingTitle', 'New Meeting');
-                  localStorage.removeItem('currentMeetingId');
-                  navigate('/transcription');
-                }}
+                onClick={() => navigate('/transcription')}
               >
                 Capture
               </CaptureButton>
@@ -958,7 +711,8 @@ const Dashboard = () => {
             position: 'fixed',
             bottom: 16,
             right: 16,
-            maxWidth: '400px',            zIndex: 2000,
+            maxWidth: '400px',
+            zIndex: 2000,
             boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
           }}
           onClose={() => setError('')}
@@ -977,16 +731,11 @@ const Dashboard = () => {
           sx: {
             borderRadius: 2,
             minWidth: 180,
-            '& .MuiMenuItem-root': {
-              justifyContent: 'flex-start',
-              textAlign: 'left',
-            }
           }
         }}
       >
         {activeItem && (
           <>
-            {/* Favorite/Unfavorite option */}
             <MenuItem dense onClick={() => {
               toggleFavorite(activeItem);
               handleMenuClose();
@@ -999,31 +748,14 @@ const Dashboard = () => {
                   <ListItemText>Remove from favorites</ListItemText>
                 </>
               ) : (
-                <>                  <ListItemIcon>
-                    <StarIcon fontSize="small" sx={{ color: '#ff7300' }} />
+                <>
+                  <ListItemIcon>
+                    <StarIcon fontSize="small" sx={{ color: '#F9A825' }} />
                   </ListItemIcon>
                   <ListItemText>Add to favorites</ListItemText>
                 </>
               )}
             </MenuItem>
-            
-            {/* Rename option */}
-            <MenuItem dense onClick={handleRenameOpen}>
-              <ListItemIcon>
-                <EditIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Rename</ListItemText>
-            </MenuItem>
-            
-            {/* Delete option */}
-            <MenuItem dense onClick={handleDeleteOpen}>
-              <ListItemIcon>
-                <DeleteIcon fontSize="small" sx={{ color: '#d32f2f' }} />
-              </ListItemIcon>
-              <ListItemText sx={{ color: '#d32f2f' }}>Delete</ListItemText>
-            </MenuItem>
-            
-            {/* View details option */}
             <MenuItem dense onClick={handleMenuClose}>
               <ListItemIcon>
                 <InfoOutlinedIcon fontSize="small" />
@@ -1033,48 +765,6 @@ const Dashboard = () => {
           </>
         )}
       </Menu>
-      
-      {/* Rename Meeting Dialog */}
-      <Dialog open={renameDialogOpen} onClose={handleRenameClose} fullWidth maxWidth="xs">
-        <DialogTitle>Rename Meeting</DialogTitle>
-        <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>
-            Enter a new name for this meeting.
-          </DialogContentText>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Meeting Name"
-            type="text"
-            fullWidth
-            variant="outlined"
-            value={newMeetingTitle}
-            onChange={(e) => setNewMeetingTitle(e.target.value)}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleRenameClose}>Cancel</Button>
-          <Button onClick={handleRenameMeeting} variant="contained" color="primary">
-            Rename
-          </Button>
-        </DialogActions>
-      </Dialog>
-      
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onClose={handleDeleteClose}>
-        <DialogTitle>Delete Meeting</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete this meeting? This action cannot be undone.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleDeleteClose}>Cancel</Button>
-          <Button onClick={handleDeleteMeeting} color="error" variant="contained">
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 };

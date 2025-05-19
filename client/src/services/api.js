@@ -65,5 +65,39 @@ export const authAPI = {
   getUserProfile: () => apiRequest('/auth/profile'),
 };
 
+// Transcription-specific API calls
+export const transcriptionAPI = {
+  processAudio: (audioChunk, meetingId) => apiRequest('/transcription/process', {
+    method: 'POST',
+    body: JSON.stringify({ 
+      audioChunk, 
+      meetingId 
+    })
+  }),
+  generateSummary: (transcription, meetingId) => apiRequest('/transcription/summary', {
+    method: 'POST',
+    body: JSON.stringify({ 
+      transcription, 
+      meetingId 
+    })
+  }),
+  chatWithTranscript: (transcription, query) => apiRequest('/transcription/chat', {
+    method: 'POST',
+    body: JSON.stringify({ 
+      transcription, 
+      query 
+    })
+  }),
+  // New method to fetch an existing meeting by ID
+  getMeeting: (meetingId) => apiRequest(`/transcription/meeting/${meetingId}`, {
+    method: 'GET'
+  }),
+  // New method to save a meeting
+  saveMeeting: (meeting) => apiRequest('/transcription/meeting', {
+    method: 'POST',
+    body: JSON.stringify(meeting)
+  })
+};
+
 // Export for general use
 export default apiRequest;

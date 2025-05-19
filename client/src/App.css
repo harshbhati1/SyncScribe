@@ -1,4 +1,7 @@
-/* TwinMind Global Styles */
+/* TwinMind Global Styles - Matching design from screenshots */
+
+/* Import Inter font family as seen in the design */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 /* Base styles - most styling will be handled by Material UI */
 body {
@@ -6,38 +9,77 @@ body {
   padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+  background-color: #F9F9F9;  /* Light background as seen in screenshots */
+  color: #333333;
+  overflow-x: hidden;
 }
 
-/* Scrollbar styling for a cleaner look */
+/* Root element to take up full height */
+html, body, #root {
+  height: 100%;
+}
+
+/* Scrollbar styling for a cleaner look - matching modern UI */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #f5f5f5;
 }
 
 ::-webkit-scrollbar-thumb {
   background: #c1c1c1;
-  border-radius: 4px;
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
+  background: #1E62EB;
+}
+
+/* Card styling enhancements */
+.MuiCard-root {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.MuiCard-root:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.08) !important;
+}
+
+/* Button effects */
+.MuiButton-containedPrimary {
+  position: relative;
+  overflow: hidden;
+}
+
+.MuiButton-containedPrimary::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.1);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.MuiButton-containedPrimary:hover::after {
+  opacity: 1;
 }
 
 /* Code block styling for JSON display */
 pre {
   white-space: pre-wrap;
   word-wrap: break-word;
-  font-family: 'Roboto Mono', monospace;
-  font-size: 0.9rem;
-}
-
-/* Auth page specific styles */
-.auth-page-gradient {
-  background: linear-gradient(to bottom right, #4285F4, #8686ff);
+  font-family: 'Inter', monospace;
+  font-size: 0.85rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
 }
 
 /* Transitons for smoother UI */
@@ -47,7 +89,64 @@ pre {
 
 .fade-enter-active {
   opacity: 1;
-  transition: opacity 300ms ease-in;
+  transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Highlight effect for text */
+.highlight {
+  background: linear-gradient(180deg, rgba(255,255,255,0) 50%, rgba(255, 213, 79, 0.5) 50%);
+  padding: 0 2px;
+}
+
+/* Audio waves animation for recording indication */
+.audio-wave-container {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  margin: 0 10px;
+  justify-content: center;
+}
+
+.audio-wave {
+  width: 3px;
+  margin: 0 2px;
+  background-color: #1E62EB;
+  border-radius: 3px;
+  transition: height 0.1s ease-out, opacity 0.1s ease-out;
+  will-change: height, opacity;
+}
+
+/* Default animation for when there's no real audio data */
+.audio-wave.default-animation {
+  animation: sound 0ms -800ms linear infinite alternate;
+}
+
+.audio-wave.default-animation:nth-child(1) { height: 10px; animation-duration: 474ms; }
+.audio-wave.default-animation:nth-child(2) { height: 16px; animation-duration: 433ms; }
+.audio-wave.default-animation:nth-child(3) { height: 12px; animation-duration: 407ms; }
+.audio-wave.default-animation:nth-child(4) { height: 18px; animation-duration: 458ms; }
+.audio-wave.default-animation:nth-child(5) { height: 15px; animation-duration: 400ms; }
+.audio-wave.default-animation:nth-child(6) { height: 10px; animation-duration: 427ms; }
+.audio-wave.default-animation:nth-child(7) { height: 15px; animation-duration: 441ms; }
+.audio-wave.default-animation:nth-child(8) { height: 12px; animation-duration: 419ms; }
+.audio-wave.default-animation:nth-child(9) { height: 17px; animation-duration: 487ms; }
+
+/* Styles for silence detection */
+.audio-wave.silence {
+  height: 3px !important;
+  opacity: 0.35 !important;
+  transition: height 0.5s ease-out, opacity 0.5s ease-out;
+}
+
+@keyframes sound {
+  0% {
+    height: 3px;
+    opacity: .35;
+  }
+  100% {
+    height: 28px;
+    opacity: .95;
+  }
 }
 
 .fade-exit {
