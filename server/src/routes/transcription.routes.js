@@ -9,12 +9,21 @@ const multer = require('multer');
 const fs = require('fs'); // Import File System module
 const path = require('path'); // Import Path module
 const authMiddleware = require('../middlewares/auth.middleware'); 
-const { getErrorResponse } = require('../utils/error.utils'); 
-const { initializeGemini } = require('../config/gemini.config');
+// const { getErrorResponse } = require('../utils/error.utils'); // Assuming you have this
+const { initializeGemini } = require('../config/gemini.config'); // Ensure path is correct
 
 // --- DEBUGGING FLAG ---
-const SAVE_FAILING_AUDIO_FOR_DEBUG = true; 
+const SAVE_AUDIO_FOR_DEBUG = true; // General flag to enable saving
 const DEBUG_AUDIO_SAVE_PATH = path.join(__dirname, '..', 'debug_audio'); 
+if (SAVE_AUDIO_FOR_DEBUG && !fs.existsSync(DEBUG_AUDIO_SAVE_PATH)) {
+    try {
+        fs.mkdirSync(DEBUG_AUDIO_SAVE_PATH, { recursive: true });
+        console.log(`[Debug] Created directory: ${DEBUG_AUDIO_SAVE_PATH}`);
+    } catch (e) {
+        console.error(`[Debug] Error creating debug audio directory ${DEBUG_AUDIO_SAVE_PATH}:`, e);
+    }
+}
+let hasSavedFirstChunk = false; // Flag to save only the very first chunk
 // --- END DEBUGGING FLAG ---
 
 const storage = multer.memoryStorage();
@@ -23,319 +32,171 @@ const upload = multer({
   limits: { fileSize: 25 * 1024 * 1024 } // 25MB limit for audio files
 });
 
-// Basic regex to check for valid Base64 characters (simple check)
-const BASE64_REGEX = /^[A-Za-z0-9+/]+[=]{0,2}$/;
+const BASE64_REGEX = /^[A-Za-z0-9+/]+[=]{0,2}$/; // For basic validation
 
 router.post('/process', authMiddleware, upload.single('audio_data'), async (req, res) => {
   const requestArrivalTimestamp = new Date().toISOString();
   console.log('\n--- [POST /process] NEW REQUEST ---');
   console.log(`[POST /process] Timestamp: ${requestArrivalTimestamp}`);
-  console.log('[POST /process] User UID:', req.user ? req.user.uid : 'N/A (Auth Middleware Issue?)');
+  console.log('[POST /process] User UID:', req.user ? req.user.uid : 'N/A');
   
   let geminiFlash, isGeminiSimulationMode;
   try {
-    // Get Gemini configuration. initializeGemini() is synchronous and caches.
     const geminiConfig = initializeGemini(); 
     geminiFlash = geminiConfig.geminiFlash;
     isGeminiSimulationMode = geminiConfig.isSimulationMode;
     console.log(`[POST /process] Gemini config loaded. Simulation Mode: ${isGeminiSimulationMode}, geminiFlash available: ${!!geminiFlash}`);
   } catch (initError) {
-    console.error('[POST /process] CRITICAL: Failed to get Gemini config during request:', initError.message);
-    isGeminiSimulationMode = true; // Fallback if config loading fails
+    console.error('[POST /process] CRITICAL: Failed to get Gemini config:', initError.message);
+    isGeminiSimulationMode = true; 
     geminiFlash = null;
   }
 
-  // Determine if simulation should be used for this specific request
   const isDevelopmentEnv = process.env.NODE_ENV === 'development';
   const forceRealGeminiInDev = process.env.USE_REAL_GEMINI === 'true';
-  // Use simulation if:
-  // 1. gemini.config.js reported simulation mode (e.g., API key missing/init error)
-  // 2. OR in development AND USE_REAL_GEMINI is not 'true'
-  // 3. OR geminiFlash object is not available for some reason
   const useSimulationThisRequest = isGeminiSimulationMode || (isDevelopmentEnv && !forceRealGeminiInDev) || !geminiFlash;
   
-  let audioFileBuffer; // To store the raw audio buffer for saving on error
+  let audioFileBuffer;
 
   try {
-    const audioFile = req.file; // File uploaded via multer
-    // Other fields from FormData (like is_final, timestamp) will be in req.body
-    const { audioChunk, is_final, timestamp, recording_time } = req.body; 
+    const audioFile = req.file;
+    const { is_final, timestamp, recording_time } = req.body; 
 
     console.log('[POST /process] req.file present:', !!audioFile);
-    if (audioFile) {
-      console.log('[POST /process] req.file.mimetype (from multer):', audioFile.mimetype);
+    if (audioFile && audioFile.buffer) {
+      console.log('[POST /process] req.file.mimetype:', audioFile.mimetype);
       console.log('[POST /process] req.file.originalname:', audioFile.originalname);
       console.log('[POST /process] req.file.size:', audioFile.size);
-      audioFileBuffer = audioFile.buffer; // Store buffer for potential saving if an error occurs
+      audioFileBuffer = audioFile.buffer; 
+    } else {
+        console.warn('[POST /process] No audio_data file or buffer received.');
+        return res.status(400).json({ success: false, error: 'No audio_data file or buffer provided.' });
     }
-    console.log('[POST /process] req.body fields:', { audioChunkProvided: !!audioChunk, is_final, timestamp, recording_time });
+    console.log('[POST /process] req.body fields:', { is_final, timestamp, recording_time });
 
-    // Check if any audio data was actually provided
-    if (!audioFile && !audioChunk) {
-      console.warn('[POST /process] No audio data provided in file or chunk.');
-      return res.status(400).json(getErrorResponse ? 
-        getErrorResponse('Bad Request', 'No audio data (file or chunk) provided.') :
-        { success: false, error: { title: 'Bad Request', detail: 'No audio data (file or chunk) provided.' }}
-      );
-    }
-
-    let audioDataB64; // Base64 encoded audio data string
-    let inputMimeTypeForGemini; // MIME type to be sent to Gemini
-
-    if (audioFile) {
-      audioDataB64 = audioFile.buffer.toString('base64');
-      // If browser sends generic 'audio/webm', specify Opus codec for Gemini, as it's common for MediaRecorder
-      if (audioFile.mimetype && audioFile.mimetype.startsWith('audio/webm') && !audioFile.mimetype.includes('codecs=')) {
-        inputMimeTypeForGemini = 'audio/webm;codecs=opus'; 
-        console.log(`[POST /process] Original multer MIME type was '${audioFile.mimetype}', FORCING '${inputMimeTypeForGemini}' for Gemini.`);
-      } else {
-        inputMimeTypeForGemini = audioFile.mimetype || 'audio/webm;codecs=opus'; // Fallback if multer provides no type
-      }
-      console.log(`[POST /process] Processing uploaded audio file. MimeType for Gemini: ${inputMimeTypeForGemini}, Original Size: ${audioFile.size} bytes. Base64 length: ${audioDataB64.length}`);
-    } else if (audioChunk) { // This path is for directly sent base64 data (less common from browser FormData)
-      audioDataB64 = audioChunk; // Assuming audioChunk is already base64
-      inputMimeTypeForGemini = req.body.mimeType || 'audio/webm;codecs=opus'; // Expect mimeType in body if sending chunk
-      console.log(`[POST /process] Processing direct base64 audio chunk. Type for Gemini: ${inputMimeTypeForGemini}. Base64 length: ${audioDataB64.length}`);
-      // If saving on error is enabled, try to convert base64 back to buffer for saving
-      if (SAVE_FAILING_AUDIO_FOR_DEBUG) {
+    // --- MODIFICATION: Save the FIRST chunk processed in this server session ---
+    if (SAVE_AUDIO_FOR_DEBUG && !hasSavedFirstChunk && audioFileBuffer) {
         try {
-            audioFileBuffer = Buffer.from(audioDataB64, 'base64');
-        } catch (e) {
-            console.warn('[POST /process] Could not create buffer from audioChunk for saving on error.');
+            const fileExtension = audioFile.originalname.split('.').pop() || 'webm';
+            const debugFileName = `FIRST_SUCCESSFUL_audio_${Date.now()}_${requestArrivalTimestamp.replace(/:/g, '-')}.${fileExtension}`;
+            const fullSavePath = path.join(DEBUG_AUDIO_SAVE_PATH, debugFileName);
+            fs.writeFileSync(fullSavePath, audioFileBuffer);
+            console.log(`[Debug] Saved FIRST audio chunk to: ${fullSavePath}`);
+            hasSavedFirstChunk = true; // Set flag so we don't save again
+        } catch (saveError) {
+            console.error('[Debug] Error saving FIRST audio file:', saveError.message);
         }
-      }
     }
+    // --- END MODIFICATION ---
 
-    // Simple sanity check for the base64 string
-    const isBase64PotentiallyValid = BASE64_REGEX.test(audioDataB64.substring(audioDataB64.length - Math.min(100, audioDataB64.length)));
-    console.log(`[POST /process] Base64 string sanity check (ends with valid chars): ${isBase64PotentiallyValid}`);
-    if (!isBase64PotentiallyValid && audioDataB64.length > 0) {
-        console.warn(`[POST /process] Potential issue: Base64 string might contain invalid characters or not be padded correctly. Snippet (last 20): ...${audioDataB64.substring(audioDataB64.length - 20)}`);
+    let audioDataB64 = audioFile.buffer.toString('base64');
+    let inputMimeTypeForGemini = audioFile.mimetype;
+    if (inputMimeTypeForGemini && inputMimeTypeForGemini.startsWith('audio/webm') && !inputMimeTypeForGemini.includes('codecs=')) {
+      inputMimeTypeForGemini = 'audio/webm;codecs=opus'; 
+      console.log(`[POST /process] Adjusted multer MIME type to '${inputMimeTypeForGemini}' for Gemini.`);
+    } else if (!inputMimeTypeForGemini) {
+      inputMimeTypeForGemini = 'audio/webm;codecs=opus'; // Default if missing
+      console.log(`[POST /process] MIME type missing, defaulted to '${inputMimeTypeForGemini}' for Gemini.`);
     }
-
-    // Parse metadata from the request
+    console.log(`[POST /process] Processing audio. MimeType for Gemini: ${inputMimeTypeForGemini}, Base64 length: ${audioDataB64.length}`);
+    
     const isFinalSegment = is_final === 'true'; 
-    const requestTimestamp = timestamp || new Date().toISOString();
+    const requestTimestampForSegment = timestamp || new Date().toISOString();
     const currentRecordingTime = parseInt(recording_time) || 0;
 
-    // --- Simulation Mode Logic ---
     if (useSimulationThisRequest) {
-      console.warn('[POST /process] Using transcription SIMULATION mode for this request.');
-      // Define simulationPhrases here as it's only used in this block
-      const simulationPhrases = [
-        "Simulated: This is a test transcription.", "Simulated: Discussing important project updates.",
-        "Simulated: The weather is nice today.", "Simulated: Please confirm receipt of this message."
-      ];
-      await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300)); // Simulate network delay
-      let simulatedText = simulationPhrases[Math.floor(Math.random() * simulationPhrases.length)];
-      if (isFinalSegment && Math.random() > 0.5) { // Make final segments a bit longer sometimes
-        simulatedText += " " + simulationPhrases[Math.floor(Math.random() * simulationPhrases.length)];
-      }
+      console.warn('[POST /process] Using transcription SIMULATION mode.');
+      // ... (simulation logic as you had before)
+      const simulationPhrases = ["Simulated: Test transcription."];
+      await new Promise(resolve => setTimeout(resolve, 200));
+      let simulatedText = simulationPhrases[0];
       const segment = {
-        id: `sim_segment_${Date.now()}`, timestamp: requestTimestamp, text: simulatedText,
-        confidence: 0.92, isFinal: isFinalSegment, recordingTime: currentRecordingTime,
+        id: `sim_segment_${Date.now()}`, timestamp: requestTimestampForSegment, text: simulatedText,
+        isFinal: isFinalSegment, recordingTime: currentRecordingTime,
       };
-      console.log('[POST /process] Simulation successful. Segment preview:', segment.text.substring(0,30) + "...");
       return res.status(200).json({ success: true, segment });
     }
 
-    // --- Real Gemini API Processing ---
-    if (!geminiFlash) { // This check should ideally be redundant if useSimulationThisRequest is false
-      console.error('[POST /process] Attempting real API call, but geminiFlash is not available. This indicates a critical initialization problem.');
-      throw new Error('Gemini API service is not properly configured or available for real processing.');
+    if (!geminiFlash) {
+      console.error('[POST /process] Gemini client (geminiFlash) is not available. Cannot process real request.');
+      throw new Error('Gemini API service is not properly configured or available.');
     }
 
-    console.log(`[POST /process] Attempting REAL Gemini call. Base64 snippet (first 60): ${audioDataB64.substring(0,60)}...`);
-    
+    console.log(`[POST /process] Attempting REAL Gemini call.`);
     const promptText = isFinalSegment 
-      ? "This is the final segment of a meeting recording. Please accurately transcribe the following audio, focusing on clarity and coherence for a meeting context."
-      : "This is an interim segment of an ongoing meeting recording. Please accurately transcribe the following audio segment.";
+      ? "This is the final segment of a meeting recording. Please accurately transcribe the following audio..."
+      : "This is an interim segment of an ongoing meeting recording. Please accurately transcribe...";
 
     const requestParts = [
-        { text: promptText },
-        { inline_data: { mime_type: inputMimeTypeForGemini, data: audioDataB64 } }
+      { text: promptText },
+      { inline_data: { mime_type: inputMimeTypeForGemini, data: audioDataB64 } }
     ];
-    // Log the structure being sent to Gemini, omitting the large base64 data for console readability
-    console.log('[POST /process] Gemini request contents structure (inline_data data omitted for brevity):', 
-                JSON.stringify([{role: "user", parts: [{text: promptText}, {inline_data: {mime_type: inputMimeTypeForGemini, data: `DATA_LENGTH_${audioDataB64.length}`}}]}])
-    );
-
-    // Make the actual call to Gemini API
+    
     const geminiResult = await geminiFlash.generateContent({
       contents: [{ role: "user", parts: requestParts }]
-      // generationConfig is taken from the model object itself, as set during initializeGemini
     });
 
-    // Validate the response structure from Gemini
-    if (!geminiResult || !geminiResult.response) {
-      console.error('[POST /process] Invalid or empty response structure from Gemini API.');
-      throw new Error('Received an invalid or empty response structure from the transcription service.');
-    }
-
     const geminiResponse = geminiResult.response;
-    if (typeof geminiResponse.text !== 'function') {
-      console.error('[POST /process] Unexpected Gemini response format: text() function is missing. Response snippet:', JSON.stringify(geminiResponse).substring(0, 200));
-      throw new Error('Invalid response format from the transcription service (text function missing).');
+    let transcribedText = "";
+    if (geminiResponse && typeof geminiResponse.text === 'function') {
+        transcribedText = geminiResponse.text().trim();
+    } else if (geminiResponse && geminiResponse.candidates && geminiResponse.candidates.length > 0 && geminiResponse.candidates[0].content && geminiResponse.candidates[0].content.parts && geminiResponse.candidates[0].content.parts.length > 0 && geminiResponse.candidates[0].content.parts[0].text) {
+        transcribedText = geminiResponse.candidates[0].content.parts[0].text.trim();
+    } else {
+        console.warn('[POST /process] Gemini response structure not as expected or no text found.');
+        transcribedText = "(No transcription text returned)";
     }
-
-    let transcribedText = geminiResponse.text().trim();
-    // Handle cases where Gemini might return no text for valid audio (e.g., silence)
-    if (!transcribedText && audioDataB64.length > 100) { // Check if audio was substantial
-        console.warn('[POST /process] Gemini returned no text for a non-trivial audio segment. Assuming silence or no detectable speech.');
-        transcribedText = "(No speech detected in this segment)"; 
-    } else if (!transcribedText) {
-        transcribedText = ""; // For truly empty or very short audio
+    
+    if (!transcribedText && audioFile.size > 1000) {
+      transcribedText = "(No speech detected)";
     }
-
     console.log(`[POST /process] Gemini transcription successful: "${transcribedText.substring(0, 50)}..."`);
 
-    // Prepare the segment object to send back to the client
     const segment = {
       id: `gemini_segment_${Date.now()}`, 
-      timestamp: requestTimestamp, 
+      timestamp: requestTimestampForSegment, 
       text: transcribedText,
-      confidence: 0.9, // Gemini API (as of last check) doesn't directly provide per-segment confidence for this call.
       isFinal: isFinalSegment, 
       recordingTime: currentRecordingTime,
     };
     return res.status(200).json({ success: true, segment });
 
-  } catch (error) { // Main catch block for errors during the /process route logic
+  } catch (error) {
     console.error('[POST /process] Error during transcription processing:', error.message);
-    if (process.env.NODE_ENV === 'development') {
-        console.error('[POST /process] Full error object details:', {
-            name: error.name,
-            message: error.message,
-            status: error.status, // For GoogleGenerativeAIFetchError
-            statusText: error.statusText, // For GoogleGenerativeAIFetchError
-            errorDetails: error.errorDetails, // For GoogleGenerativeAIFetchError
-            stack: error.stack ? error.stack.substring(0, 400) : 'No stack available'
-        });
+    if (error.response && error.response.data) {
+        console.error('[POST /process] Gemini API Error Details:', error.response.data);
+    } else if (process.env.NODE_ENV === 'development') {
+        console.error('[POST /process] Full error object:', error);
     }
 
-    // If debug flag is set and we have an audio buffer (from multer), save the failing audio
-    if (SAVE_FAILING_AUDIO_FOR_DEBUG && audioFileBuffer) {
+    if (SAVE_AUDIO_FOR_DEBUG && audioFileBuffer) { // Save failing audio
       try {
-        if (!fs.existsSync(DEBUG_AUDIO_SAVE_PATH)){ // Create debug directory if it doesn't exist
-            fs.mkdirSync(DEBUG_AUDIO_SAVE_PATH, { recursive: true });
-            console.log(`[Debug] Created directory: ${DEBUG_AUDIO_SAVE_PATH}`);
-        }
-        // Attempt to get a file extension from the original filename, default to .webm
-        const fileExtension = (req.file && req.file.originalname && req.file.originalname.includes('.')) 
+        const fileExtension = (req.file?.originalname?.includes('.')) 
                               ? req.file.originalname.split('.').pop() 
                               : 'webm';
-        const debugFileName = `failed_audio_${Date.now()}_${requestArrivalTimestamp.replace(/:/g, '-')}.${fileExtension}`;
+        const debugFileName = `FAILED_audio_${Date.now()}_${requestArrivalTimestamp.replace(/:/g, '-')}.${fileExtension}`;
         const fullSavePath = path.join(DEBUG_AUDIO_SAVE_PATH, debugFileName);
-        fs.writeFileSync(fullSavePath, audioFileBuffer); // Write the raw buffer
-        console.log(`[Debug] Saved failing audio to: ${fullSavePath}`);
+        fs.writeFileSync(fullSavePath, audioFileBuffer);
+        console.log(`[Debug] Saved FAILING audio to: ${fullSavePath}`);
       } catch (saveError) {
-        console.error('[Debug] Error saving failing audio file:', saveError.message);
+        console.error('[Debug] Error saving FAILING audio file:', saveError.message);
       }
-    } else if (SAVE_FAILING_AUDIO_FOR_DEBUG) {
-        console.warn('[Debug] Wanted to save failing audio, but audioFileBuffer was not available (e.g., if input was audioChunk).');
     }
 
-    // Fallback response logic: send a simulated error message to the client
-    try {
-      const isFinal = !!(req && req.body && req.body.is_final === 'true');
-      const timestamp = (req && req.body && req.body.timestamp) || new Date().toISOString();
-      const originalErrorMessage = error && error.message ? String(error.message).substring(0, 150) : "Unknown transcription processing error";
-      
-      // Define errorPhrases here, within this scope
-      const errorPhrases = [
-        "Apologies, an issue occurred while processing this audio segment.",
-        "The transcription service faced a temporary problem with this chunk.",
-        "Could not transcribe this audio segment due to an error.",
-      ];
-      const fallbackText = errorPhrases[Math.floor(Math.random() * errorPhrases.length)];
-
-      const errorSegment = {
-        id: `error_segment_${Date.now()}`, 
-        timestamp, 
-        text: fallbackText,
-        confidence: 0.0, 
-        error: true, // Flag to indicate this is an error segment
-        errorDetail: originalErrorMessage, // Provide some detail about the original error
-        isFinal: isFinal, // Preserve the finality status if possible
-      };
-      console.warn('[POST /process] Sending error fallback response to client due to processing error.');
-      // Send 200 OK with an error flag, so frontend can handle it gracefully
-      return res.status(200).json({
-        success: true, // The HTTP request itself was handled, but transcription had an issue
-        segment: errorSegment,
-        isErrorFallback: true 
-      });
-    } catch (fallbackError) {
-      // If the fallback response logic itself fails (highly unlikely but possible)
-      console.error('[POST /process] CRITICAL: Error in fallback simulation response itself:', fallbackError.message);
-      const detail = fallbackError && fallbackError.message ? String(fallbackError.message) : 'Transcription fallback mechanism also failed.';
-      // Send a generic 500 error
-      return res.status(500).json(getErrorResponse ? 
-        getErrorResponse('Server Error', detail.substring(0,150)) :
-        { success: false, error: { title: 'Server Error', detail: detail.substring(0,150) }}
-      );
-    }
-  }
-});
-
-// Simulated /summary route (as you provided)
-router.post('/summary', authMiddleware, async (req, res) => {
-  console.log('[POST /summary] Received request. User UID:', req.user ? req.user.uid : 'N/A');
-  try {
-    const { transcription } = req.body;
-    if (!transcription) {
-      return res.status(400).json(getErrorResponse ? 
-        getErrorResponse('Bad Request', 'No transcription provided for summary.') :
-        { success: false, error: { title: 'Bad Request', detail: 'No transcription provided for summary.'}}
-      );
-    }
-    console.log('[POST /summary] Generating simulated summary for transcript length:', transcription.length);
-    await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
-    const summary = {
-      id: `summary_${Date.now()}`,
-      title: "Simulated Meeting Summary",
-      keyPoints: [
-        "Key point one derived from transcript.",
-        "Another important discussion point.",
-        "Decision was made regarding the new feature."
-      ],
-      actionItems: ["Follow up with marketing team.", "Prepare report by EOD."]
+    // Fallback response
+    const isFinal = !!(req?.body?.is_final === 'true');
+    const fallbackTimestamp = (req?.body?.timestamp) || new Date().toISOString();
+    const originalErrorMessage = error?.message ? String(error.message).substring(0, 150) : "Unknown error";
+    const errorSegment = {
+      id: `error_segment_${Date.now()}`, timestamp: fallbackTimestamp, text: `Error: ${originalErrorMessage}`,
+      error: true, errorDetail: originalErrorMessage, isFinal: isFinal,
     };
-    return res.status(200).json({ success: true, summary });
-  } catch (error) {
-    console.error('[POST /summary] Error generating summary:', error.message);
-    return res.status(500).json(getErrorResponse ?
-      getErrorResponse('Server Error', 'Failed to generate summary.') :
-      { success: false, error: { title: 'Server Error', detail: 'Failed to generate summary.'}}
-    );
-  }
-});
-
-// Simulated /chat route (as you provided)
-router.post('/chat', authMiddleware, async (req, res) => {
-  console.log('[POST /chat] Received request. User UID:', req.user ? req.user.uid : 'N/A');
-  try {
-    const { transcription, query } = req.body;
-    if (!transcription || !query) {
-      return res.status(400).json(getErrorResponse ?
-        getErrorResponse('Bad Request', 'Transcription and query are required for chat.') :
-        { success: false, error: { title: 'Bad Request', detail: 'Transcription and query are required for chat.'}}
-      );
-    }
-    console.log(`[POST /chat] Simulating chat response for query: "${query.substring(0,30)}..."`);
-    await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 400));
-    const response = {
-      id: `chat_response_${Date.now()}`,
-      query,
-      answer: `Based on the provided transcript, regarding "${query.substring(0,20)}...", it appears the main consensus was to proceed with caution and gather more data.`
-    };
-    return res.status(200).json({ success: true, response });
-  } catch (error) {
-    console.error('[POST /chat] Error in chat processing:', error.message);
-    return res.status(500).json(getErrorResponse ?
-      getErrorResponse('Server Error', 'Failed to process chat query.') :
-      { success: false, error: { title: 'Server Error', detail: 'Failed to process chat query.'}}
-    );
+    console.warn('[POST /process] Sending error fallback response to client.');
+    return res.status(200).json({ // Send 200 so frontend can parse it as an error segment
+      success: true, // HTTP request itself was handled
+      segment: errorSegment,
+      isErrorFallback: true 
+    });
   }
 });
 

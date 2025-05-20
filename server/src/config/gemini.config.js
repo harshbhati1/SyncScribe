@@ -49,7 +49,7 @@ const initializeGemini = () => {
     
     // Determine which model to use - prefer gemini-1.5-flash for audio transcription
     // as it might be more stable than the latest versions
-    const modelName = process.env.GEMINI_MODEL_NAME || 'gemini-1.5-flash'; 
+    const modelName = process.env.GEMINI_MODEL_NAME || 'gemini-2.0-flash'; 
     console.log(`[GeminiConfig] Attempting to initialize Gemini model: ${modelName}`);
     
     // Create just one model instance that will be reused
