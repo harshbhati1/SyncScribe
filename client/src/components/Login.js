@@ -6,17 +6,14 @@ import backgroundImg from '../assets/background.jpg';
 // Material UI imports
 import { 
   Box, 
-  Typography, 
   Button, 
   Container, 
   Alert, 
   Paper, 
-  Link,
-  Stack
+  Link
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import GoogleIcon from '@mui/icons-material/Google';
-import AppleIcon from '@mui/icons-material/Apple';
 
 // Custom styled components
 const LoginContainer = styled(Box)(({ theme }) => ({

@@ -1,0 +1,68 @@
+/* Styling for transcription animations */
+
+.streaming-text {
+  color: #1976d2; /* Use primary color for text being streamed */
+  font-weight: 500;
+  display: inline-block;
+  animation: fadeIn 0.5s ease-in;
+}
+
+.blinking-cursor {
+  display: inline-block;
+  animation: blink 1s infinite;
+  color: #1976d2;
+  font-weight: bold;
+  margin-left: 1px;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
+}
+
+/* Typing effect background */
+.typing-effect-bg {
+  position: relative;
+  border-radius: 4px;
+  animation: pulse 2s infinite ease-in-out;
+  background-color: rgba(25, 118, 210, 0.08);
+  padding: 0 2px;
+}
+
+@keyframes pulse {
+  0% { background-color: rgba(25, 118, 210, 0.05); }
+  50% { background-color: rgba(25, 118, 210, 0.1); }
+  100% { background-color: rgba(25, 118, 210, 0.05); }
+}
+
+.audio-wave-container {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  gap: 2px;
+  margin-left: 10px;
+}
+
+.audio-wave {
+  width: 3px;
+  border-radius: 2px;
+  height: 20px;
+  max-height: 20px;
+  background-color: #1E62EB;
+  transition: height 0.1s ease;
+}
+
+.audio-wave.default-animation {
+  height: 3px;
+  background-color: #cccccc;
+}
+
+.audio-wave.silence {
+  height: 3px;
+  background-color: #aaaaaa;
+}

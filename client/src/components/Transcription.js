@@ -742,17 +742,50 @@ const Transcription = () => {
       
       {/* Transcript Tab */}      <TabPanel hidden={tabValue !== 0} value={tabValue} index={0}>
         {/* Enhanced Meeting Recorder Component */}
-        <MeetingRecorder
-          onTranscriptionUpdate={(newTranscript, segment) => {
-            // Update full transcription
-            setTranscription(newTranscript);
-            
-            // Add new segment if provided
-            if (segment) {
-              setTranscriptionSegments(prev => [...prev, segment]);
+          <MeetingRecorder
+        onTranscriptionUpdate={(textChunk, metadata) => { // Renamed for clarity
+          // Handle different types of updates based on metadata
+          if (metadata && metadata.type === 'reset') {
+            setTranscription("");
+            setTranscriptionSegments([]);
+            return;
+          }
+
+          if (metadata && metadata.error) {
+            // Append error message to the main transcript
+            const errorMsg = textChunk || (metadata.errorDetail ? `Error: ${metadata.errorDetail}` : "Error during transcription.");
+            setTranscription(prevFullTranscript => 
+              prevFullTranscript + (prevFullTranscript ? " " : "") + `[${errorMsg}]`
+            );
+            // Optionally add error segment to segments array
+            if (metadata) {
+              setTranscriptionSegments(prev => [...prev, { ...metadata, text: `[${errorMsg}]`, isError: true }]);
             }
-          }}
-        />
+            return;
+          }
+
+          // Accumulate the main transcription string
+          if (textChunk || (metadata && metadata.type === 'segment_final_empty')) {
+            setTranscription(prevFullTranscript => {
+              if (!textChunk && metadata && metadata.type === 'segment_final_empty') {
+                // If it's an intentionally empty final chunk (e.g. from MeetingRecorder), don't add extra space
+                return prevFullTranscript;
+              }
+              if (!textChunk) { // If it's an empty interim chunk (e.g. silence), don't add anything
+                  return prevFullTranscript;
+              }
+              // Append new text. Add a space if there's existing transcript and the new chunk isn't empty.
+              return prevFullTranscript + (prevFullTranscript ? " " : "") + textChunk;
+            });
+          }
+          
+          // Add new segment (metadata + text) to the segments array
+          if (metadata) { 
+            // Ensure you store the actual textChunk with its metadata
+            setTranscriptionSegments(prev => [...prev, { ...metadata, text: textChunk }]);
+          }
+        }}
+      />
         
         {/* Display Transcript Section */}
         {transcription ? (

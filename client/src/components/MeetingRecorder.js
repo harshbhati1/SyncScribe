@@ -3,9 +3,6 @@ import { Box, Typography, Button, CircularProgress } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import MicIcon from '@mui/icons-material/Mic';
 import StopIcon from '@mui/icons-material/Stop';
-// Assuming you would import ffmpeg related libraries if you implement this
-// import { FFmpeg } from '@ffmpeg/ffmpeg'; // Or @ffmpeg/ffmpeg/dist/esm for ESM
-// import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
 // Styled components (Keep as is)
 const ActionButton = styled(Button)(({ theme }) => ({
@@ -55,13 +52,13 @@ const VisualizerCanvas = styled('canvas')(({ theme }) => ({
   boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
 }));
 
-// WAV Encoding Helper Functions (Kept for reference, but would be replaced by ffmpeg)
-function pcmToWavBlobOriginal(pcmData, sampleRate, numChannels = 1, bitDepth = 16) {
+// WAV Encoding Helper Functions
+function pcmToWavBlob(pcmData, sampleRate, numChannels = 1, bitDepth = 16) {
   const format = 1; // PCM
   const subChunk1Size = 16; // For PCM
   const blockAlign = numChannels * (bitDepth / 8);
   const byteRate = sampleRate * blockAlign;
-  const subChunk2Size = pcmData.length * (bitDepth / 8); // This assumes pcmData is already scaled to bitDepth
+  const subChunk2Size = pcmData.length * (bitDepth / 8); 
   const chunkSize = 36 + subChunk2Size;
 
   const buffer = new ArrayBuffer(44 + subChunk2Size);
@@ -84,14 +81,14 @@ function pcmToWavBlobOriginal(pcmData, sampleRate, numChannels = 1, bitDepth = 1
   let offset = 44;
   if (bitDepth === 16) {
     for (let i = 0; i < pcmData.length; i++) {
-      const s = Math.max(-1, Math.min(1, pcmData[i])); // pcmData is Float32Array from -1 to 1
+      const s = Math.max(-1, Math.min(1, pcmData[i])); 
       view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
       offset += 2;
     }
   } else if (bitDepth === 8) {
     for (let i = 0; i < pcmData.length; i++) {
       const s = Math.max(-1, Math.min(1, pcmData[i]));
-      view.setUint8(offset, (s + 1) * 127.5); // Convert to 0-255 range for Uint8
+      view.setUint8(offset, (s + 1) * 127.5); 
       offset += 1;
     }
   }
@@ -107,7 +104,8 @@ function writeString(view, offset, string) {
 
 const MeetingRecorder = ({ onTranscriptionUpdate }) => {
   const [recording, setRecording] = useState(false);
-  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
+  const [isProcessingAudio, setIsProcessingAudio] = useState(false); 
+  const [isFinalizing, setIsFinalizing] = useState(false); // True only when the *final* chunk is processing after stop
   const [error, setError] = useState('');
   const [displayTime, setDisplayTime] = useState(0);
 
@@ -128,52 +126,6 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
   const canvasRef = useRef(null);
   const analyserNodeRef = useRef(null); 
   const visualizerAnimationRef = useRef(null);
-
-  // --- FFmpeg setup (conceptual) ---
-  const ffmpegRef = useRef(null);
-  const [ffmpegLoaded, setFfmpegLoaded] = useState(false);
-
-  // const loadFFmpeg = useCallback(async () => {
-  //   if (ffmpegRef.current) {
-  //       console.log("FFmpeg already initialized or loading.");
-  //       if (!ffmpegRef.current.loaded) await ffmpegRef.current.load(); // Ensure it's loaded
-  //       setFfmpegLoaded(true);
-  //       return;
-  //   }
-  //   try {
-  //       console.log("Initializing FFmpeg...");
-  //       const newFFmpeg = new FFmpeg();
-  //       // Example: const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-  //       // await newFFmpeg.load({
-  //       //   coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-  //       //   wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-  //       // });
-  //       // For local setup, you might need to serve these files or use a different loading mechanism.
-  //       // This part is highly dependent on your project setup and how you serve ffmpeg.wasm files.
-  //       // For simplicity, we'll assume it's loaded.
-  //       // You'd need to implement the actual loading based on ffmpeg.wasm documentation.
-  //       console.log("FFmpeg load attempt (conceptual - implement actual loading)");
-  //       ffmpegRef.current = newFFmpeg; // Store the instance
-  //       // ffmpegRef.current.loaded = true; // Mark as loaded after successful load
-  //       setFfmpegLoaded(true); // This would be set after actual successful load
-  //       console.log("FFmpeg conceptually loaded.");
-  //   } catch (e) {
-  //       console.error("Error loading FFmpeg:", e);
-  //       setError("Failed to load audio processing tools.");
-  //   }
-  // }, []);
-
-  // useEffect(() => {
-  //   loadFFmpeg(); // Attempt to load FFmpeg on component mount
-  //   return () => {
-  //       // Optional: Terminate FFmpeg if needed, though often not necessary for client-side
-  //       // if (ffmpegRef.current && ffmpegRef.current.loaded) {
-  //       //   try { ffmpegRef.current.terminate(); } catch(e) {}
-  //       // }
-  //   }
-  // }, [loadFFmpeg]);
-  // --- End FFmpeg setup ---
-
 
   const formatTime = (seconds) => {
     const minutes = Math.floor(seconds / 60);
@@ -214,6 +166,7 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
   const initializeAudioVisualizer = useCallback(async (audioCtx, sourceNode) => {
     if (!audioCtx || !sourceNode || !canvasRef.current) return false;
     try {
+      if (analyserNodeRef.current) analyserNodeRef.current.disconnect(); // Disconnect old one if exists
       analyserNodeRef.current = audioCtx.createAnalyser();
       analyserNodeRef.current.fftSize = 2048;
       sourceNode.connect(analyserNodeRef.current);
@@ -222,7 +175,6 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
   }, []);
 
   const drawVisualization = useCallback(() => {
-    // ... (Visualization drawing logic - keep as is, ensure it uses recordingRef.current)
     if (!analyserNodeRef.current || !canvasRef.current || !audioContextRef.current || audioContextRef.current.state === 'closed') {
       if (visualizerAnimationRef.current) cancelAnimationFrame(visualizerAnimationRef.current);
       visualizerAnimationRef.current = null;
@@ -293,7 +245,9 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
         cancelAnimationFrame(visualizerAnimationRef.current);
         visualizerAnimationRef.current = null;
       }
-      if(canvasRef.current) drawVisualization();
+      if(canvasRef.current && (!audioContextRef.current || audioContextRef.current.state !== 'running' || !recordingRef.current)) {
+        drawVisualization(); // Draw idle state
+      }
     }
     return () => { 
       if (visualizerAnimationRef.current) cancelAnimationFrame(visualizerAnimationRef.current);
@@ -301,7 +255,7 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
   }, [recording, initializeAudioVisualizer, drawVisualization]); 
 
   const processAudioChunkRef = useRef(null);
-  const handleStopOverallRecordingRef = useRef(null); // Ref for main stop function
+  const handleStopOverallRecordingRef = useRef(null);
 
   const cleanupAudioProcessing = useCallback((stopStreamTracks = true) => {
     console.log('[Recorder] cleanupAudioProcessing called. stopStreamTracks:', stopStreamTracks);
@@ -334,13 +288,18 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
   }, []);
 
   const internalProcessAudioChunk = useCallback(async (audioBlob, isFinalSessionChunk) => {
-    // This function remains the same as it just sends the blob
     if (!audioBlob || audioBlob.size < (audioBlob.type === 'audio/wav' ? 1000 : 100) ) {
       console.warn('[Recorder] processAudioChunk: Blob too small or null.', {size: audioBlob?.size, type: audioBlob?.type, isFinal: isFinalSessionChunk});
-      if (isFinalSessionChunk) setIsProcessingAudio(false);
+      if (isFinalSessionChunk) {
+        setIsProcessingAudio(false);
+        setIsFinalizing(false);
+      }
       return;
     }
-    setIsProcessingAudio(true);
+    
+    setIsProcessingAudio(true); 
+    if(isFinalSessionChunk) setIsFinalizing(true);
+
     console.log(`[Recorder] processAudioChunk: Processing blob (type: ${audioBlob.type}, size: ${(audioBlob.size / 1024).toFixed(2)} KB), isFinal: ${isFinalSessionChunk}`);
 
     try {
@@ -354,9 +313,10 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
       const token = localStorage.getItem('authToken');
       if (!token) {
         setError('Authentication required.');
-        setIsProcessingAudio(false);
-        if (recordingRef.current) handleStopOverallRecordingRef.current?.();
-        return;
+        if (recordingRef.current && handleStopOverallRecordingRef.current) {
+             handleStopOverallRecordingRef.current();
+        }
+        throw new Error("Auth token not found");
       }
       
       console.log(`[Recorder] Sending ${audioBlob.type} audio (is_final: ${isFinalSessionChunk}) to backend.`);
@@ -378,32 +338,36 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
           isFinal: data.segment?.isFinal || isFinalSessionChunk,
           id: data.segment?.id,
           timestamp: data.segment?.timestamp,
+          type: 'segment' 
         });
       }
     } catch (err) {
       console.error('Error in processAudioChunk API call:', err);
       setError(`Transcription error: ${err.message}.`);
        if (onTranscriptionUpdate) {
-        onTranscriptionUpdate(`[Error: ${err.message.substring(0,50)}]`, { error: true, isFinal: isFinalSessionChunk });
+        onTranscriptionUpdate(`[Error: ${err.message.substring(0,50)}]`, { error: true, isFinal: isFinalSessionChunk, type: 'error' });
       }
     } finally {
       setIsProcessingAudio(false);
+      if(isFinalSessionChunk) setIsFinalizing(false);
     }
   }, [onTranscriptionUpdate, displayTime]);
 
   const encodeAndSendCurrentAudio = useCallback(async (isFinal) => {
-    if (pcmDataQueueRef.current.length === 0 && !isFinal) { // Don't send empty interim chunks
+    if (pcmDataQueueRef.current.length === 0 && !isFinal) { 
       console.log("[Recorder] encodeAndSend: No PCM data for interim chunk.");
       return;
     }
      if (pcmDataQueueRef.current.length === 0 && isFinal) {
-      console.log("[Recorder] encodeAndSend: No PCM data for final chunk, sending empty signal if needed by backend.");
-      // Optionally send an empty "final" signal if your backend expects it
-      // For now, we'll just return if no data.
+      console.log("[Recorder] encodeAndSend: No PCM data for final chunk.");
+      if (onTranscriptionUpdate) {
+        onTranscriptionUpdate("", {isFinal: true, type: 'segment_final_empty'});
+      }
+      // If it's final and empty, ensure processing/finalizing flags are reset
       setIsProcessingAudio(false);
+      setIsFinalizing(false);
       return;
     }
-
 
     console.log(`[Recorder] encodeAndSend: Preparing to encode ${pcmDataQueueRef.current.length} PCM buffers. isFinal: ${isFinal}`);
     let totalLength = 0;
@@ -411,8 +375,11 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
     
     if (totalLength === 0) {
         console.warn("[Recorder] encodeAndSend: Concatenated PCM data is empty after checking queue length.");
-        if (isFinal) setIsProcessingAudio(false);
-        pcmDataQueueRef.current = []; // Ensure it's cleared
+        if (isFinal) {
+            setIsProcessingAudio(false);
+            setIsFinalizing(false);
+        }
+        pcmDataQueueRef.current = [];
         return;
     }
 
@@ -426,79 +393,19 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
 
     const sampleRate = audioContextRef.current?.sampleRate || TARGET_SAMPLE_RATE;
     
-    // --- CONCEPTUAL FFmpeg Integration Point ---
-    // if (ffmpegRef.current && ffmpegLoaded) {
-    //   console.log(`[Recorder] encodeAndSend: Encoding WAV using FFmpeg at sampleRate: ${sampleRate}`);
-    //   setIsProcessingAudio(true); // Indicate processing has started for this chunk
-    //   try {
-    //     const ffmpeg = ffmpegRef.current;
-    //     const inputFileName = 'input.pcm';
-    //     const outputFileName = 'output.wav';
+    console.log(`[Recorder] encodeAndSend: Encoding WAV using JavaScript function at sampleRate: ${sampleRate}`);
+    const wavBlob = pcmToWavBlob(concatenatedPcm, sampleRate); 
+    await processAudioChunkRef.current?.(wavBlob, isFinal);
 
-    //     // Convert Float32Array PCM to Uint8Array for FFmpeg
-    //     // This step depends on how you want to feed raw PCM to FFmpeg.
-    //     // FFmpeg usually expects raw PCM data in a specific format (e.g., s16le for 16-bit signed little-endian).
-    //     // This conversion can be complex. For simplicity, assuming a direct way to pass Float32Array or converting it.
-    //     // This is a placeholder for the actual conversion.
-    //     // const pcmU8Array = new Uint8Array(concatenatedPcm.buffer); // This is NOT directly s16le
-
-    //     // You would need to correctly format concatenatedPcm into what FFmpeg expects for raw PCM input.
-    //     // For example, converting Float32Array (-1 to 1) to Int16Array (-32768 to 32767)
-    //     const pcmInt16 = new Int16Array(concatenatedPcm.length);
-    //     for (let i = 0; i < concatenatedPcm.length; i++) {
-    //         pcmInt16[i] = Math.max(-1, Math.min(1, concatenatedPcm[i])) * 32767;
-    //     }
-    //     const pcmU8ArrayFromInt16 = new Uint8Array(pcmInt16.buffer);
-
-
-    //     await ffmpeg.writeFile(inputFileName, pcmU8ArrayFromInt16);
-    //     // Command to convert raw PCM (s16le = signed 16-bit little-endian) to WAV
-    //     // Adjust -ar (sample rate) and -ac (channels) as needed.
-    //     await ffmpeg.exec([
-    //       '-f', 's16le',        // Input format: signed 16-bit little-endian PCM
-    //       '-ar', String(sampleRate), // Input sample rate
-    //       '-ac', '1',            // Input channels (mono)
-    //       '-i', inputFileName,   // Input file
-    //       outputFileName         // Output WAV file
-    //     ]);
-    //     const outputData = await ffmpeg.readFile(outputFileName);
-    //     await ffmpeg.deleteFile(inputFileName);
-    //     await ffmpeg.deleteFile(outputFileName);
-        
-    //     const wavBlob = new Blob([outputData], { type: 'audio/wav' });
-    //     console.log(`[Recorder] FFmpeg encoded WAV blob size: ${wavBlob.size}`);
-    //     await processAudioChunkRef.current?.(wavBlob, isFinal);
-
-    //   } catch (ffmpegError) {
-    //     console.error("Error during FFmpeg encoding:", ffmpegError);
-    //     setError("Audio encoding failed with FFmpeg.");
-    //     if (isFinal) setIsProcessingAudio(false);
-    //   }
-    // } else {
-      // Fallback to original JavaScript WAV encoding if FFmpeg not loaded or not used
-      console.log(`[Recorder] encodeAndSend: Encoding WAV using JavaScript function at sampleRate: ${sampleRate}`);
-      const wavBlob = pcmToWavBlobOriginal(concatenatedPcm, sampleRate); // Use original function
-      await processAudioChunkRef.current?.(wavBlob, isFinal);
-    // }
-    // --- End CONCEPTUAL FFmpeg Integration Point ---
-
-  }, [TARGET_SAMPLE_RATE, ffmpegLoaded /* processAudioChunkRef, ffmpegRef */]);
+  }, [TARGET_SAMPLE_RATE, onTranscriptionUpdate]); 
 
 
   const handleStartOverallRecording = useCallback(async () => {
     console.log('[Recorder] User clicked Start Recording.');
     setError('');
     setDisplayTime(0);
+    setIsFinalizing(false); // Ensure finalizing is false when starting
     if (onTranscriptionUpdate) onTranscriptionUpdate('', { type: 'reset' });
-
-    // if (!ffmpegLoaded) { // Optional: Check if ffmpeg is loaded before starting
-    //     console.warn("FFmpeg not loaded yet. Attempting to load...");
-    //     // await loadFFmpeg(); // Ensure it's loaded
-    //     // if (!ffmpegLoaded) { // Re-check after load attempt
-    //     //     setError("Audio processing tools could not be loaded. Please try again.");
-    //     //     return;
-    //     // }
-    // }
 
     cleanupAudioProcessing(true); 
 
@@ -507,13 +414,12 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
 
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      // Attempt to create AudioContext with the target sample rate
       let createdAudioContext;
       try {
         createdAudioContext = new AudioCtx({ sampleRate: TARGET_SAMPLE_RATE });
       } catch (e) {
         console.warn(`Could not create AudioContext with target sample rate ${TARGET_SAMPLE_RATE}. Using default. Error: ${e.message}`);
-        createdAudioContext = new AudioCtx(); // Fallback to default sample rate
+        createdAudioContext = new AudioCtx(); 
       }
       audioContextRef.current = createdAudioContext;
       
@@ -559,7 +465,7 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
       cleanupAudioProcessing(true);
       setRecording(false);
     }
-  }, [onTranscriptionUpdate, initializeAudioVisualizer, cleanupAudioProcessing, CHUNK_DURATION, TARGET_SAMPLE_RATE, encodeAndSendCurrentAudio, /*loadFFmpeg, ffmpegLoaded*/]);
+  }, [onTranscriptionUpdate, initializeAudioVisualizer, cleanupAudioProcessing, CHUNK_DURATION, TARGET_SAMPLE_RATE, encodeAndSendCurrentAudio]);
 
   const internalHandleStopOverallRecording = useCallback(async () => {
     console.log('[Recorder] User clicked Stop Recording.');
@@ -570,13 +476,16 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
       chunkIntervalIdRef.current = null;
       console.log("[Recorder] Chunk interval timer cleared.");
     }
-
+    
+    setIsFinalizing(true); // Indicate that we are now processing the *final* chunk
+    // isProcessingAudio will be set by encodeAndSendCurrentAudio/internalProcessAudioChunk
     console.log("[Recorder] Processing final audio chunk on stop.");
     await encodeAndSendCurrentAudio(true); 
 
     cleanupAudioProcessing(true); 
     
     setDisplayTime(0); 
+    // setIsFinalizing(false) will be handled by internalProcessAudioChunk's finally block
   }, [encodeAndSendCurrentAudio, cleanupAudioProcessing]);
 
   useEffect(() => { processAudioChunkRef.current = internalProcessAudioChunk; }, [internalProcessAudioChunk]);
@@ -590,21 +499,24 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
           variant={recording ? "outlined" : "contained"}
           color={recording ? "error" : "primary"}
           onClick={recording ? handleStopOverallRecordingRef.current : handleStartOverallRecording}
-          disabled={isProcessingAudio && !recording} 
-          startIcon={isProcessingAudio && recording ? <CircularProgress size={20} color="inherit"/> : (recording ? <StopIcon /> : <MicIcon />)}
+          disabled={!recording && isFinalizing} // Disable "Start Recording" if previous session is still finalizing
+          startIcon={
+            isFinalizing ? <CircularProgress size={20} color="inherit" titleaccess="Finalizing..." /> :
+            (recording ? 
+              (isProcessingAudio ? <CircularProgress size={20} color="inherit" titleaccess="Processing segment..." /> : <StopIcon />) 
+              : <MicIcon />)
+          }
           sx={{ minWidth: '180px', height: '48px', fontSize: '1rem' }}
         >
-          {isProcessingAudio && recording ? "Processing audio..." : (recording ? "Stop Recording" : "Start Recording")}
+          {isFinalizing ? "Finalizing..." : (recording ? "Stop Recording" : "Start Recording")}
         </ActionButton>
       </Box>
-
-      {/* { !ffmpegLoaded && <Typography variant="caption" color="textSecondary">Loading audio tools...</Typography> } */}
-
-      {isProcessingAudio && !recording && ( 
-        <Box sx={{textAlign: 'center', my:1}}>
-          <CircularProgress size={24} />
-          <Typography variant="caption" display="block">Finalizing...</Typography>
-        </Box>
+      
+      {/* Subtle indicator for interim chunk processing when recording is active */}
+      {recording && isProcessingAudio && !isFinalizing && (
+        <Typography variant="caption" display="block" textAlign="center" sx={{ color: 'text.secondary', my: 0.5 }}>
+          Processing audio segment...
+        </Typography>
       )}
       
       {recording && (
