@@ -107,10 +107,12 @@ app.use((err, req, res, next) => {
 // Import routes
 const authRoutes = require('./src/routes/auth.routes');
 const transcriptionRoutes = require('./src/routes/transcription.routes');
+const chatRoutes = require('./routes/chatRoutes'); 
 
 // Route middleware
 app.use('/api/auth', authRoutes);
 app.use('/api/transcription', transcriptionRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Handle 404 routes
 app.use((req, res) => {
