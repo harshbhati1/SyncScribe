@@ -362,26 +362,23 @@ const Transcription = () => {
           }
         ]);
       }
-      
-      await transcriptionAPI.chatWithTranscript(
+        await transcriptionAPI.chatWithTranscript(
         rawTranscript,  // The full transcript text
         historyToSend,  // Previous chat messages
         currentTextQuery, // Current user query
         {          onChunk: (textChunk) => {
-            // Clean the markdown formatting from the text chunk
-            const cleanedChunk = textChunk
-              .replace(/\*\*/g, '') // Remove bold markers
-              .replace(/\*/g, '');  // Remove italic markers
-              
-            // Update the streaming message with each chunk
+            // Preserve markdown formatting in the text chunk
+            // It will be converted to HTML when rendering with dangerouslySetInnerHTML
+            
+            // Update the streaming message with each chunk, preserving the markdown
             setChatMessages(prevMessages =>
               prevMessages.map(msg =>
                 msg.id === currentAiMessageIdRef.current
-                  ? { ...msg, text: (msg.text || "") + cleanedChunk }
+                  ? { ...msg, text: (msg.text || "") + textChunk }
                   : msg
               )
             );
-          },          onEnd: () => {
+          },onEnd: () => {
             // Mark message as complete when stream ends
             setChatMessages(prevMessages => {
               const currentMessage = prevMessages.find(msg => msg.id === currentAiMessageIdRef.current);
@@ -391,7 +388,8 @@ const Transcription = () => {
                   ? { 
                       ...msg, 
                       isStreaming: false,
-                      text: currentMessage ? cleanMarkdownFormatting(currentMessage.text) : msg.text 
+                      // Don't clean markdown - we'll render it as formatted HTML
+                      text: currentMessage ? currentMessage.text : msg.text 
                     }
                   : msg
               );
@@ -574,20 +572,35 @@ const Transcription = () => {
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [rawTranscript, chatMessages.length, tabValue, hasAutoSwitchedToChat]);
-  // Format text by removing markdown symbols  
+  }, [rawTranscript, chatMessages.length, tabValue, hasAutoSwitchedToChat]);  // Format text by preserving and converting markdown symbols to styling  
   const cleanMarkdownFormatting = (text) => {
     if (!text) return '';
     
-    // Remove asterisks and other markdown formatting
+    // Convert markdown to styled text
     return text
-      .replace(/\*\*(.*?)\*\*/g, '$1') // Bold (**text**)
-      .replace(/\*(.*?)\*/g, '$1')     // Italic (*text*)
-      .replace(/^\s*[*•-]\s+/gm, '• ') // Bullet points to a standard bullet
-      .replace(/\n\s*\n/g, '\n\n')     // Preserve paragraph breaks
-      .replace(/^#+\s+(.+)$/gm, '$1')  // Remove heading markers
-      .replace(/`{1,3}(.*?)`{1,3}/g, '$1') // Remove code/inline code formatting
-      .replace(/_{1,2}(.*?)_{1,2}/g, '$1'); // Remove underscores for emphasis
+      // Handle bold formatting (**text**)
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') 
+      // Handle italic formatting (*text*)
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      // Handle numbered lists
+      .replace(/^\s*(\d+)\.\s+(.+)$/gm, '<div class="list-item"><span class="list-number">$1.</span> $2</div>')
+      // Handle bullet points with proper list items
+      .replace(/^\s*[*•-]\s+(.+)$/gm, '<div class="list-item">• $1</div>')
+      // Preserve paragraph breaks
+      .replace(/\n\s*\n/g, '<br/><br/>')
+      // Format headings
+      .replace(/^#\s+(.+)$/gm, '<span style="font-size: 1.2em; font-weight: 600; margin: 0.8em 0 0.4em 0; display: block;">$1</span>')
+      .replace(/^##\s+(.+)$/gm, '<span style="font-size: 1.1em; font-weight: 600; margin: 0.7em 0 0.3em 0; display: block;">$1</span>')
+      .replace(/^###\s+(.+)$/gm, '<span style="font-size: 1.05em; font-weight: 600; margin: 0.6em 0 0.3em 0; display: block;">$1</span>')
+      // Format code blocks
+      .replace(/`{3}([\s\S]*?)`{3}/g, '<pre style="background-color: #f5f5f5; padding: 0.5em; border-radius: 4px; font-family: monospace; overflow-x: auto;">$1</pre>')
+      // Format inline code
+      .replace(/`(.*?)`/g, '<code style="background-color: #f5f5f5; padding: 0.1em 0.3em; border-radius: 3px; font-family: monospace;">$1</code>')
+      // Handle underscores for emphasis
+      .replace(/_{2}(.*?)_{2}/g, '<strong>$1</strong>')
+      .replace(/_(.*?)_/g, '<em>$1</em>')
+      // Convert line breaks (but not inside code blocks)
+      .replace(/(?<!<pre[^>]*>)(?<!<code[^>]*>)\n(?![^<]*<\/pre>)(?![^<]*<\/code>)/g, '<br/>');
   };
 
   return (
@@ -739,8 +752,7 @@ const Transcription = () => {
                       )}
                     </Box>
                     
-                    <Box sx={{
-                        maxWidth: '70%', // Slightly reduced max width
+                    <Box sx={{                        maxWidth: '70%', // Slightly reduced max width
                         backgroundColor: message.sender === 'user' 
                           ? 'primary.main' 
                           : (message.isError ? 'error.light' : 'rgba(255,255,255,0.95)'),
@@ -764,21 +776,58 @@ const Transcription = () => {
                             ? '0 4px 8px rgba(25, 118, 210, 0.35)'
                             : '0 4px 8px rgba(0,0,0,0.14)', // Enhanced shadow on hover
                           transform: 'translateY(-2px)'
+                        },
+                        '& .list-item': {
+                          marginBottom: '0.3rem',
+                          display: 'flex',
+                          alignItems: 'flex-start'
+                        },
+                        '& .list-number': {
+                          minWidth: '1.5rem',
+                          fontWeight: 500
                         }
                       }}
-                    >
-                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6 }}>
-                        {cleanMarkdownFormatting(message.text)}                        {/* Removed animation dots at the end of AI messages */}
-                        {message.sender === 'ai' && message.isStreaming && (
-                          <Box component="span" sx={{ 
-                            display: 'inline-flex', 
-                            alignItems: 'center', 
-                            ml: 0.5
-                          }}>
-                            {/* Typing indicator removed */}
-                          </Box>
-                        )}
-                      </Typography>
+                    >                      {/* User messages don't need formatting, AI messages do */}
+                      {message.sender === 'user' ? (
+                        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6 }}>
+                          {message.text}
+                        </Typography>
+                      ) : (
+                        <Typography 
+                          variant="body2"                          sx={{ 
+                            whiteSpace: 'pre-wrap', 
+                            wordBreak: 'break-word', 
+                            lineHeight: 1.6,
+                            '& strong': { fontWeight: 600 },
+                            '& em': { fontStyle: 'italic' },
+                            '& code': { 
+                              fontFamily: 'monospace',
+                              backgroundColor: 'rgba(0,0,0,0.05)',
+                              padding: '0.1rem 0.3rem',
+                              borderRadius: '3px'
+                            },
+                            '& pre': { 
+                              overflowX: 'auto', 
+                              maxWidth: '100%',
+                              backgroundColor: 'rgba(0,0,0,0.04)',
+                              padding: '0.5rem',
+                              borderRadius: '4px',
+                              margin: '0.5rem 0'
+                            },
+                            '& ul': { paddingLeft: '1.5rem', marginTop: '0.5rem', marginBottom: '0.5rem' },
+                            '& li': { marginBottom: '0.25rem' }
+                          }}
+                          dangerouslySetInnerHTML={{ __html: cleanMarkdownFormatting(message.text) }}
+                        />
+                      )}                      {/* Streaming indicator - removed */}
+                      {message.sender === 'ai' && message.isStreaming && (
+                        <Box component="span" sx={{ 
+                          display: 'inline-flex', 
+                          alignItems: 'center',
+                          ml: 0.5
+                        }}>
+                        </Box>
+                      )}
                     </Box>
                   </ListItem>                ))}
                 <div ref={chatEndRef} />
