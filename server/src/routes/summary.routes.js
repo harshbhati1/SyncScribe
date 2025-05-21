@@ -43,55 +43,65 @@ router.post('/generate', authMiddleware, async (req, res) => {
     });
   }
 
-  try {
-    const summaryPrompt = `You are an expert meeting analyst for the TwinMind application.
+  try {    const summaryPrompt = `You are an expert meeting analyst for the TwinMind application.
     
-Your task is to analyze the following meeting transcript and generate a comprehensive summary.
+I will provide you with a meeting transcript. Your task is to create a comprehensive and insightful summary report based solely on this information.
+
+Please follow these critical instructions for structuring and generating the report:
+
+1. ANALYZE THE TRANSCRIPT: Thoroughly read and understand the transcript content.
+
+2. IDENTIFY KEY THEMES AND LOGICAL DIVISIONS: Based on your analysis, identify the natural main themes, core components, logical sections, or distinct aspects within the meeting.
+
+3. DYNAMICALLY CREATE SECTION HEADLINES: Design your own relevant and descriptive headlines (section titles) for the summary. These headlines should accurately reflect and categorize the information presented in each section. DO NOT use a predefined template for headlines; create them based on the unique content of the meeting.
+
+4. USE BULLET POINTS FOR CONTENT: Under each headline you create, present the summarized information, key details, findings, arguments, or steps through detailed and analytical bullet points. Each bullet point should be informative and capture significant aspects of the meeting.
+
+5. ENSURE ANALYTICAL DEPTH: Your summary should not be a mere listing of facts. Strive for an analytical quality that provides a deep understanding of the meeting. This includes highlighting key insights, relationships between different pieces of information, implications, and the overall significance.
+
+6. COMPREHENSIVE COVERAGE: Ensure all critical aspects of the meeting are covered within your self-designed sections and bullet points.
+
+7. INCLUDE THESE MANDATORY SECTIONS (but design your own headlines for them):
+   - A section with the title/subject of the meeting
+   - A brief overall summary section (2-3 sentences)
+   - A section covering key discussion points
+   - A section for action items and next steps
 
 TRANSCRIPT:
 ---
 ${transcript}
 ---
 
-Please provide a structured summary with the following sections:
+Format your response using the following structure:
 
-1. TITLE: Suggest a concise title for this meeting based on the content.
+TITLE: [Your suggested title for the meeting]
 
-2. OVERALL SUMMARY: Write a concise paragraph (3-5 sentences) summarizing what the meeting was about.
+SUMMARY: [Brief 2-3 sentence overall summary]
 
-3. KEY DISCUSSION POINTS: List the main topics and key points discussed in the meeting (4-8 bullet points).
-
-4. ACTION ITEMS: Extract all action items, tasks, and commitments mentioned in the meeting. For each action item, include:
-   - What needs to be done
-   - Who is responsible (if mentioned)
-   - Timeline/deadline (if mentioned)
-
-Format your response using plain text without markdown formatting. For the response structure, use this format:
-
-TITLE: [Your suggested title]
-
-OVERALL SUMMARY:
-[Your summary paragraph]
-
-KEY DISCUSSION POINTS:
-- [Point 1]
-- [Point 2]
+[DYNAMICALLY CREATED SECTION HEADLINE 1]:
+- [Analytical bullet point]
+- [Analytical bullet point]
 ...
 
-ACTION ITEMS:
-- [Action item 1]
-- [Action item 2]
+[DYNAMICALLY CREATED SECTION HEADLINE 2]:
+- [Analytical bullet point]
+- [Analytical bullet point]
 ...
 
-Be specific and extract information directly from the transcript. If certain sections cannot be determined from the transcript, note this in your response.`;
+[DYNAMICALLY CREATED SECTION HEADLINE for action items]:
+- [Action item with responsible person and timeline if mentioned]
+- [Action item with responsible person and timeline if mentioned]
+...
 
-    const geminiResult = await geminiPro.generateContent({
+[Add more dynamic sections as appropriate based on the meeting content]
+
+Be specific and extract information directly from the transcript. If certain information cannot be determined, note this in your response.`;    const geminiResult = await geminiPro.generateContent({
       contents: [{ role: 'user', parts: [{ text: summaryPrompt }] }],
       generationConfig: {
-        temperature: 0.2,
+        temperature: 0.3,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 4000,
+        maxOutputTokens: 8000,
       }
     });
 
@@ -126,8 +136,7 @@ function parseSummaryResponse(text) {
   const summary = {
     title: '',
     overall: '',
-    keyPoints: [],
-    actionItems: []
+    sections: [] // Will hold dynamically created sections with headline and bullet points
   };
 
   // Extract title (first non-empty line after "TITLE:")
@@ -136,38 +145,64 @@ function parseSummaryResponse(text) {
     summary.title = titleMatch[1].trim();
   }
 
-  // Extract overall summary (text between "OVERALL SUMMARY:" and "KEY DISCUSSION POINTS:")
-  const overallMatch = text.match(/OVERALL SUMMARY:?\s*([\s\S]*?)(?=KEY DISCUSSION POINTS:|$)/i);
+  // Extract overall summary (text between "SUMMARY:" and the first dynamic section headline)
+  const overallMatch = text.match(/SUMMARY:?\s*([\s\S]*?)(?=\n\s*[A-Z][^:]*:|\n\s*$)/i);
   if (overallMatch && overallMatch[1]) {
     summary.overall = overallMatch[1].trim();
   }
 
-  // Extract key points (bullet points between "KEY DISCUSSION POINTS:" and "ACTION ITEMS:")
-  const keyPointsMatch = text.match(/KEY DISCUSSION POINTS:?\s*([\s\S]*?)(?=ACTION ITEMS:|$)/i);
-  if (keyPointsMatch && keyPointsMatch[1]) {
-    const keyPointsText = keyPointsMatch[1].trim();
-    // Extract bullet points (lines starting with "-", "•", "*", or digit followed by ".")
-    const keyPointsLines = keyPointsText.split('\n')
-      .map(line => line.trim())
-      .filter(line => line.match(/^[-•*]\s+|^\d+\.\s+/));
+  // Extract all dynamic sections (heading followed by bullet points)
+  // This regex finds all sections with a headline followed by bullet points
+  const sectionRegex = /\n([A-Z][^:\n]*):?\s*\n((?:\s*-[^\n]*\n?)+)/g;
+  
+  let match;
+  while ((match = sectionRegex.exec(text)) !== null) {
+    const headline = match[1].trim();
+    const contentText = match[2].trim();
     
-    summary.keyPoints = keyPointsLines.map(line => 
-      line.replace(/^[-•*]\s+|^\d+\.\s+/, '').trim()
-    );
+    // Extract bullet points
+    const bulletPoints = contentText
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.startsWith('-'))
+      .map(line => line.substring(1).trim());
+    
+    // Add to sections array
+    if (bulletPoints.length > 0) {
+      summary.sections.push({
+        headline,
+        bulletPoints
+      });
+    }
   }
-
-  // Extract action items (bullet points after "ACTION ITEMS:")
-  const actionItemsMatch = text.match(/ACTION ITEMS:?\s*([\s\S]*?)(?=$)/i);
-  if (actionItemsMatch && actionItemsMatch[1]) {
-    const actionItemsText = actionItemsMatch[1].trim();
-    // Extract bullet points (lines starting with "-", "•", "*", or digit followed by ".")
-    const actionItemsLines = actionItemsText.split('\n')
-      .map(line => line.trim())
-      .filter(line => line.match(/^[-•*]\s+|^\d+\.\s+/));
-    
-    summary.actionItems = actionItemsLines.map(line => 
-      line.replace(/^[-•*]\s+|^\d+\.\s+/, '').trim()
-    );
+  
+  // Special handling for action items - we want to identify the action items section
+  // by looking for keywords in the section headline
+  const actionItemsSection = summary.sections.find(section => 
+    section.headline.toLowerCase().includes('action') || 
+    section.headline.toLowerCase().includes('next step') ||
+    section.headline.toLowerCase().includes('task') ||
+    section.headline.toLowerCase().includes('follow up')
+  );
+  
+  if (actionItemsSection) {
+    summary.actionItems = actionItemsSection.bulletPoints;
+  } else {
+    summary.actionItems = [];
+  }
+  
+  // Special handling for key points - identify the key points/discussion section
+  const keyPointsSection = summary.sections.find(section => 
+    section.headline.toLowerCase().includes('discussion') || 
+    section.headline.toLowerCase().includes('key point') ||
+    section.headline.toLowerCase().includes('highlight') ||
+    section.headline.toLowerCase().includes('main topic')
+  );
+  
+  if (keyPointsSection) {
+    summary.keyPoints = keyPointsSection.bulletPoints;
+  } else {
+    summary.keyPoints = [];
   }
 
   return summary;

@@ -39,47 +39,58 @@ import SendIcon from '@mui/icons-material/Send';
 import apiRequest, { transcriptionAPI } from '../services/api';
 import MeetingRecorder from './MeetingRecorder';
 
-// Styled components
+// Import the enhanced components
+import EnhancedChatInput from './EnhancedChatInput';
+import EnhancedNotifications from './EnhancedNotifications';
+import EmptyState from './EmptyState';
+import MessageBubble from './MessageBubble';
+
+// Styled components with enhanced TwinMind theme colors
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
-  backgroundColor: theme.palette.background.paper,
-  boxShadow: 'none',
-  borderBottom: `1px solid ${theme.palette.divider}`,
-  color: theme.palette.text.primary,
+  backgroundColor: '#ffffff',
+  boxShadow: '0 3px 8px rgba(11, 79, 117, 0.08)',
+  borderBottom: '1px solid #e4e4e7',
+  color: '#2d3748',
+  transition: 'box-shadow 0.3s ease',
 }));
 
 const TabPanel = styled(Box)(({ theme }) => ({
   padding: theme.spacing(2),
   flexGrow: 1,
   overflow: 'auto',
+  backgroundColor: '#f8fafc',
+  borderRadius: '0 0 8px 8px',
   // Ensuring the TabPanel takes up available vertical space
   // The parent Box of Transcription.js already has display: 'flex', flexDirection: 'column', height: '100vh'
   // So, flexGrow: 1 on TabPanel should make it expand.
-  // If specific height calculations are needed beyond AppBar, they can be done here or on the content Box.
-  // For example: height: `calc(100vh - ${theme.mixins.toolbar.minHeight * 2}px - ${theme.spacing(4)}px)`,
-  // if you have a fixed AppBar and Tabs height.
 }));
-
 
 const RecordingDot = styled('div')(({ theme, isRecording }) => ({
   width: 12,
   height: 12,
   borderRadius: '50%',
-  backgroundColor: isRecording ? '#ff5252' : '#c1c1c1',
+  backgroundColor: isRecording ? '#ff7300' : '#a1a1aa',
   marginRight: theme.spacing(1),
+  transition: 'all 0.2s ease-in-out',
   animation: isRecording ? 'pulse 1.5s infinite ease-in-out' : 'none',
   '@keyframes pulse': {
-    '0%': { transform: 'scale(0.95)', boxShadow: '0 0 0 0 rgba(255, 82, 82, 0.7)' },
-    '70%': { transform: 'scale(1)', boxShadow: '0 0 0 5px rgba(255, 82, 82, 0)' },
-    '100%': { transform: 'scale(0.95)', boxShadow: '0 0 0 0 rgba(255, 82, 82, 0)' },
+    '0%': { transform: 'scale(0.95)', boxShadow: '0 0 0 0 rgba(255, 115, 0, 0.7)' },
+    '70%': { transform: 'scale(1)', boxShadow: '0 0 0 10px rgba(255, 115, 0, 0)' },
+    '100%': { transform: 'scale(0.95)', boxShadow: '0 0 0 0 rgba(255, 115, 0, 0)' },
   },
 }));
 
 const EditableTitle = styled(Typography)(({ theme }) => ({
   cursor: 'pointer',
-  padding: theme.spacing(0.5, 1),
-  borderRadius: theme.spacing(0.5),
+  padding: theme.spacing(0.5, 1.5),
+  borderRadius: theme.spacing(1),
+  color: '#0b4f75',
+  fontWeight: 600,
+  transition: 'all 0.2s ease',
   '&:hover': {
-    backgroundColor: 'rgba(0, 0, 0, 0.04)',
+    backgroundColor: 'rgba(11, 79, 117, 0.08)',
+    transform: 'translateY(-1px)',
+    boxShadow: '0 2px 4px rgba(11, 79, 117, 0.05)',
   },
 }));
 
@@ -87,7 +98,24 @@ const ActionButton = styled(Button)(({ theme }) => ({
   borderRadius: '24px',
   padding: theme.spacing(1, 3),
   textTransform: 'none',
-  fontWeight: 500,
+  fontWeight: 600,
+  backgroundColor: '#ff7300',
+  color: '#ffffff',
+  boxShadow: '0 2px 6px rgba(255, 115, 0, 0.25)',
+  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+  '&:hover': {
+    backgroundColor: '#fc9e4f',
+    boxShadow: '0 4px 12px rgba(255, 115, 0, 0.3)',
+    transform: 'translateY(-2px)',
+  },
+  '&:active': {
+    transform: 'translateY(0)',
+    boxShadow: '0 1px 3px rgba(255, 115, 0, 0.3)',
+  },
+  '&.Mui-disabled': {
+    backgroundColor: 'rgba(255, 115, 0, 0.3)',
+    color: '#ffffff'
+  }
 }));
 
 const Transcription = () => {
@@ -623,16 +651,38 @@ const Transcription = () => {
       .replace(/_(.*?)_/g, '<em>$1</em>')
       // Convert line breaks (but not inside code blocks)
       .replace(/(?<!<pre[^>]*>)(?<!<code[^>]*>)\n(?![^<]*<\/pre>)(?![^<]*<\/code>)/g, '<br/>');
-  };
-
-  return (
-    <Box sx={{ flexGrow: 1, height: '100vh', display: 'flex', flexDirection: 'column' }}>
+  };  return (
+    <Box sx={{ 
+      flexGrow: 1, 
+      height: '100vh', 
+      display: 'flex', 
+      flexDirection: 'column',
+      background: 'linear-gradient(145deg, #ffffff, #f8fafc)',
+      backgroundAttachment: 'fixed',
+      color: '#334155'
+    }}>
       <StyledAppBar position="static">
         <Toolbar>
-          <IconButton edge="start" color="inherit" onClick={() => navigate('/dashboard')} sx={{ mr: 1 }}>
+          <IconButton 
+            edge="start" 
+            sx={{ 
+              mr: 1, 
+              color: '#0b4f75',
+              borderRadius: '12px',
+              transition: 'all 0.2s ease',
+              '&:hover': {
+                backgroundColor: 'rgba(11, 79, 117, 0.08)',
+                transform: 'translateY(-1px)'
+              },
+              '&:active': {
+                transform: 'translateY(0px)'
+              }
+            }} 
+            onClick={() => navigate('/dashboard')}
+          >
             <ArrowBackIcon />
           </IconButton>
-          <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center' }}> {/* Ensured flex alignment */}
+          <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center' }}>
             {editingTitle ? (
               <TextField
                 value={newTitle}
@@ -642,11 +692,27 @@ const Transcription = () => {
                 autoFocus
                 onBlur={handleTitleSave}
                 onKeyPress={(e) => e.key === 'Enter' && handleTitleSave()}
-                sx={{ mr: 1, flexGrow: 1, maxWidth: '50%' }} // Allow title field to grow
+                sx={{ 
+                  mr: 1, 
+                  flexGrow: 1, 
+                  maxWidth: '50%',
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '8px',
+                    '& fieldset': {
+                      borderColor: '#e4e4e7',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: '#0b4f75',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: '#0b4f75',
+                    }
+                  }
+                }}
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
-                      <IconButton edge="end" onClick={handleTitleSave} size="small">
+                      <IconButton edge="end" onClick={handleTitleSave} size="small" sx={{ color: '#0b4f75' }}>
                         <CheckCircleIcon fontSize="small" />
                       </IconButton>
                     </InputAdornment>
@@ -658,34 +724,72 @@ const Transcription = () => {
                 {meetingTitle}
               </EditableTitle>
             )}
-            {/* Local recording indicator - ensure this JSX is what you intend */}
             {isRecordingLocal && (
               <Box sx={{ display: 'flex', alignItems: 'center', ml: 2 }}>
                 <RecordingDot isRecording={isRecordingLocal} />
-                <Typography variant="caption" color="error" sx={{ mr: 1 }}>
+                <Typography variant="caption" sx={{ mr: 1, color: '#ff7300', fontWeight: 500 }}>
                   Rec: {formatTime(recordingTimeLocal)}
                 </Typography>
-                {/* Optional: your local audio wave visualization if you have one */}
               </Box>
             )}
           </Box>
         </Toolbar>
-        <Tabs value={tabValue} onChange={handleTabChange} variant="fullWidth" indicatorColor="primary" textColor="primary">
+        <Tabs 
+          value={tabValue} 
+          onChange={handleTabChange} 
+          variant="fullWidth" 
+          sx={{
+            '& .MuiTab-root': {
+              color: '#64748b',
+              minHeight: '48px',
+              padding: '12px 16px',
+              opacity: 0.7,
+              textTransform: 'none',
+              fontSize: '0.9rem',
+              fontWeight: 500,
+              letterSpacing: '0.01em',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                color: '#0b4f75',
+                opacity: 0.9,
+                backgroundColor: 'rgba(11, 79, 117, 0.04)'
+              },
+              '&.Mui-selected': {
+                color: '#0b4f75',
+                fontWeight: 600,
+                opacity: 1
+              }
+            },
+            '& .MuiTabs-indicator': {
+              backgroundColor: '#ff7300',
+              height: '3px',
+              borderRadius: '2px',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+            }
+          }}
+        >
           <Tab icon={<ArticleIcon fontSize="small" />} iconPosition="start" label="Transcript" />
           <Tab icon={<ChatIcon fontSize="small" />} iconPosition="start" label="Chat" />
           <Tab icon={<SummarizeIcon fontSize="small" />} iconPosition="start" label="Summary" />
         </Tabs>
       </StyledAppBar>
 
-      {error && <Alert severity="error" sx={{ m: 2, flexShrink: 0 }} onClose={() => setError('')}>{error}</Alert>}
+      {error && (
+        <EnhancedNotifications
+          open={Boolean(error)}
+          message={error}
+          severity="error"
+          onClose={() => setError('')}
+        />
+      )}
       
       {isProcessing && (
-        <Alert severity="info" sx={{ m: 2, flexShrink: 0 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <CircularProgress size={20} sx={{ mr: 1 }} />
-            <Typography variant="body2">Generating meeting summary... This may take a few moments.</Typography>
-          </Box>
-        </Alert>
+        <EnhancedNotifications
+          open={isProcessing}
+          message="Generating meeting summary... This may take a few moments."
+          severity="info"
+          loading={true}
+        />
       )}
 
       {/* Transcript Tab */}
@@ -697,9 +801,28 @@ const Transcription = () => {
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
                 <IconButton color="primary" onClick={saveTranscription} disabled={isProcessing || !rawTranscript} title="Save Meeting"><SaveIcon fontSize="small" /></IconButton>
                 <IconButton color="error" onClick={resetTranscriptionData} disabled={isProcessing} title="Delete Transcript"><DeleteIcon fontSize="small" /></IconButton>
-              </Box>
-              <Paper variant="outlined" sx={{ p: 2, minHeight: '200px', maxHeight: 'calc(100vh - 400px)', overflowY: 'auto', backgroundColor: '#f9f9f9' }}>
-                <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
+              </Box>              <Paper 
+                variant="outlined" 
+                sx={{ 
+                  p: 3, 
+                  minHeight: '200px', 
+                  maxHeight: 'calc(100vh - 400px)', 
+                  overflowY: 'auto', 
+                  backgroundColor: '#f8fafc',
+                  borderRadius: '16px',
+                  boxShadow: '0 4px 16px rgba(11, 79, 117, 0.08)',
+                  border: '1px solid rgba(226, 232, 240, 0.8)',
+                  transition: 'all 0.3s ease'
+                }}
+              >
+                <Typography 
+                  variant="body1" 
+                  sx={{ 
+                    whiteSpace: 'pre-wrap', 
+                    lineHeight: 1.7,
+                    color: '#334155' 
+                  }}
+                >
                   {animatedDisplayedTranscript || ( (isRecordingLocal || (typeof MeetingRecorder !== 'undefined' && MeetingRecorder.isRecording)) && !rawTranscript ? "Listening..." : "Start recording to see transcript...")}
                 </Typography>
               </Paper>
@@ -709,466 +832,274 @@ const Transcription = () => {
                 </ActionButton>
               </Box>
             </>
-          ) : ( <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'calc(100% - 40px)' /* Adjust if MeetingRecorder has fixed height */ }}> <ArticleIcon color="action" sx={{fontSize: 48, mb:2, opacity: 0.5}}/> <Typography variant="h6" color="textSecondary" align="center"> Start recording to get started. </Typography><Typography variant="body2" color="textSecondary" align="center">Your live transcript will appear here.</Typography> </Box> )}
+          ) : ( 
+            <Box 
+              sx={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                height: 'calc(100% - 40px)', /* Adjust if MeetingRecorder has fixed height */
+                padding: 4
+              }}
+            > 
+              <EmptyState type="transcript" />
+            </Box>
+          )}
         </Box>
       </TabPanel>      {/* Chat Tab */}      <TabPanel hidden={tabValue !== 1} value={tabValue} index={1}>
         <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <Box sx={{ p: { xs: 1, sm: 2 }, flexGrow: 1, overflowY: 'auto', mb: 1 }}>
-            {chatMessages.length > 0 ? (              <Paper 
+            {chatMessages.length > 0 ? (
+              <Paper 
                 variant="outlined" 
                 sx={{ 
-                  p: { xs: 1, sm: 1.5, md: 2 }, // Responsive padding
-                  background: 'linear-gradient(to bottom, #fbfbfb, #f5f5f5)',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                  borderRadius: { xs: '8px', sm: '12px' } // Smaller border radius on mobile
+                  p: { xs: 1.5, sm: 2, md: 2.5 },
+                  background: 'linear-gradient(145deg, #f8fafc, #f1f5f9)',
+                  boxShadow: '0 4px 16px rgba(11, 79, 117, 0.08)',
+                  borderRadius: { xs: '12px', sm: '16px' },
+                  border: '1px solid rgba(226, 232, 240, 0.8)'
                 }}
               >
                 <List sx={{py:0}}>
-                {chatMessages.map((message) => (                  <ListItem
-                    key={message.id}
-                    alignItems="flex-start"
-                    sx={{
-                      flexDirection: message.sender === 'user' ? 'row-reverse' : 'row',
-                      px: 0, 
-                      py: { xs: 0.5, sm: 0.7 }, // Responsive vertical padding
-                      mb: { xs: 1, sm: 1.5 }, // Responsive margin between messages
-                      animation: 'fadeIn 0.3s ease-in-out',
-                      '@keyframes fadeIn': {
-                        '0%': { opacity: 0, transform: 'translateY(5px)' },
-                        '100%': { opacity: 1, transform: 'translateY(0)' }
-                      }
-                    }}
-                  >
-                    {/* Avatar for user or AI */}                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        mr: message.sender === 'user' ? 0 : { xs: 1, sm: 1.5 },
-                        ml: message.sender === 'user' ? { xs: 1, sm: 1.5 } : 0,
-                        mt: 0.5
-                      }}
-                    >
-                      {message.sender === 'user' ? (
-                        <Box
-                          sx={{
-                            width: { xs: 28, sm: 32 }, // Smaller on mobile
-                            height: { xs: 28, sm: 32 }, // Smaller on mobile
-                            borderRadius: '50%',
-                            backgroundColor: 'primary.light',
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                            flexShrink: 0 // Prevent avatar from shrinking
-                          }}
-                        >
-                          <PersonIcon sx={{ fontSize: { xs: 16, sm: 18 }, color: 'white' }} />
-                        </Box>
-                      ) : (
-                        <Box
-                          sx={{
-                            width: { xs: 28, sm: 32 }, // Smaller on mobile
-                            height: { xs: 28, sm: 32 }, // Smaller on mobile
-                            borderRadius: '50%',
-                            background: 'linear-gradient(135deg, #6a11cb 0%, #2575fc 100%)',
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                            flexShrink: 0 // Prevent avatar from shrinking
-                          }}
-                        >
-                          <SmartToyIcon sx={{ fontSize: { xs: 16, sm: 18 }, color: 'white' }} />
-                        </Box>
-                      )}
-                    </Box>
-                    
-                    <Box sx={{                        maxWidth: {xs: '85%', sm: '75%', md: '70%'}, // Responsive width based on screen size
-                        backgroundColor: message.sender === 'user' 
-                          ? 'primary.main' 
-                          : (message.isError ? 'error.light' : 'rgba(255,255,255,0.95)'),
-                        color: message.sender === 'user' 
-                          ? 'primary.contrastText' 
-                          : (message.isError ? 'error.dark' : 'text.primary'),
-                        borderRadius: message.sender === 'user' 
-                          ? '20px 20px 4px 20px' 
-                          : '20px 20px 20px 4px', // Improved bubble style
-                        p: {xs: 1.3, sm: 1.6}, // Responsive padding
-                        boxShadow: message.sender === 'user'
-                          ? '0 2px 8px rgba(25, 118, 210, 0.25)'
-                          : '0 2px 8px rgba(0,0,0,0.06)',
-                        position: 'relative', // For creating the time tooltip
-                        transition: 'all 0.2s ease-in-out', // Smooth transitions
-                        border: message.sender === 'user' 
-                          ? 'none' 
-                          : '1px solid rgba(0,0,0,0.05)',
-                        '&:hover': {
-                          boxShadow: message.sender === 'user'
-                            ? '0 4px 8px rgba(25, 118, 210, 0.35)'
-                            : '0 4px 8px rgba(0,0,0,0.14)', // Enhanced shadow on hover
-                          transform: 'translateY(-2px)'
-                        },
-                        '& .list-item': {
-                          marginBottom: '0.5rem',
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          flexWrap: 'nowrap'
-                        },
-                        '& .list-number': {
-                          minWidth: '1.5rem',
-                          fontWeight: 500,
-                          flexShrink: 0
-                        },
-                        '& .list-bullet': {
-                          minWidth: '1.2rem',
-                          marginRight: '0.3rem',
-                          flexShrink: 0
-                        },
-                        '& .list-content': {
-                          flexGrow: 1,
-                          wordBreak: 'break-word'
-                        }
-                      }}
-                    >                      {/* User messages don't need formatting, AI messages do */}
-                      {message.sender === 'user' ? (                        <Typography variant="body2" sx={{ 
-                            whiteSpace: 'pre-wrap', 
-                            wordBreak: 'break-word', 
-                            lineHeight: 1.6,
-                            fontSize: { xs: '0.875rem', sm: '0.875rem', md: '1rem' } // Responsive font size
-                          }}>
-                          {message.text}
-                        </Typography>
-                      ) : (
-                        <Typography 
-                          variant="body2"                          sx={{ 
-                            whiteSpace: 'pre-wrap', 
-                            wordBreak: 'break-word', 
-                            lineHeight: 1.6,
-                            fontSize: { xs: '0.875rem', sm: '0.875rem', md: '1rem' }, // Responsive font size
-                            '& strong': { fontWeight: 600 },
-                            '& em': { fontStyle: 'italic' },
-                            '& code': { 
-                              fontFamily: 'monospace',
-                              backgroundColor: 'rgba(0,0,0,0.05)',
-                              padding: '0.1rem 0.3rem',
-                              borderRadius: '3px',
-                              fontSize: { xs: '0.8125rem', sm: '0.8125rem', md: '0.875rem' }, // Smaller code font on mobile
-                              wordBreak: 'break-word'
-                            },
-                            '& pre': { 
-                              overflowX: 'auto', 
-                              maxWidth: '100%',
-                              backgroundColor: 'rgba(0,0,0,0.04)',
-                              padding: { xs: '0.3rem', sm: '0.5rem' }, // Responsive padding
-                              borderRadius: '4px',
-                              margin: '0.5rem 0',
-                              fontSize: { xs: '0.8125rem', sm: '0.8125rem', md: '0.875rem' }, // Smaller code font on mobile
-                              whiteSpace: 'pre-wrap' // Allow wrapping in code blocks
-                            },
-                            '& ul': { paddingLeft: { xs: '1rem', sm: '1.5rem' }, marginTop: '0.5rem', marginBottom: '0.5rem' },
-                            '& li': { marginBottom: '0.25rem' }
-                          }}
-                          dangerouslySetInnerHTML={{ __html: cleanMarkdownFormatting(message.text) }}                        />
-                      )}
-                      {/* Streaming indicator - removed */}
-                      {message.sender === 'ai' && message.isStreaming && (
-                        <Box component="span" sx={{ 
-                          display: 'inline-flex', 
-                          alignItems: 'center',
-                          ml: 0.5
-                        }}>
-                        </Box>
-                      )}
-                    </Box>
-                  </ListItem>                ))}
+                {chatMessages.map((message) => (
+                  <MessageBubble 
+                    key={message.id} 
+                    message={message} 
+                    cleanMarkdownFormatting={cleanMarkdownFormatting} 
+                  />
+                ))}
                 <div ref={chatEndRef} />
               </List>
             </Paper>
             ) : (
-              rawTranscript ? (                
-                <Box 
-                  sx={{ 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    height: '100%',
-                    animation: 'fadeIn 0.5s ease-out',
-                    '@keyframes fadeIn': {
-                      '0%': { opacity: 0 },
-                      '100%': { opacity: 1 }
-                    }
-                  }}
-                >
-                  <Box 
-                    sx={{
-                      width: 72,
-                      height: 72,
-                      borderRadius: '50%',
-                      backgroundColor: '#e3f2fd',
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      mb: 3,
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                      animation: 'pulse 2s infinite',
-                      '@keyframes pulse': {
-                        '0%': { boxShadow: '0 0 0 0 rgba(66, 133, 244, 0.4)' },
-                        '70%': { boxShadow: '0 0 0 10px rgba(66, 133, 244, 0)' },
-                        '100%': { boxShadow: '0 0 0 0 rgba(66, 133, 244, 0)' }
-                      }
-                    }}
-                  >
-                    <ChatIcon color="primary" sx={{ fontSize: 40 }} />
-                  </Box>
-                  <Typography variant="h6" color="textSecondary" align="center">Chat with your transcript</Typography>
-                  <Typography variant="body2" color="textSecondary" align="center" sx={{mt:1, mb: 3, maxWidth: '70%'}}>
-                    Ask questions about your meeting transcript. I can help summarize key points, extract action items, or clarify details.
-                  </Typography>
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      justifyContent: 'center',
-                      flexWrap: 'wrap',
-                      gap: 1,
-                      maxWidth: '80%'
-                    }}
-                  >
-                    {['What were the main topics?', 'Summarize action items', 'Who said what?'].map((suggestion) => (
-                      <Button
-                        key={suggestion}
-                        variant="outlined"
-                        size="small"
-                        onClick={() => {
-                          setChatQuery(suggestion);
-                          // Focus on the text field
-                          document.querySelector('input[type="text"]')?.focus();
-                        }}
-                        sx={{
-                          borderRadius: '16px',
-                          fontSize: '0.75rem',
-                          py: 0.5,
-                          borderColor: 'rgba(0, 0, 0, 0.12)',
-                          color: 'text.secondary',
-                          '&:hover': {
-                            backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                            borderColor: 'primary.light'
-                          }
-                        }}
-                      >
-                        {suggestion}
-                      </Button>
-                    ))}
-                  </Box>
-                </Box>
+              rawTranscript ? (
+                <EmptyState 
+                  type="chat"
+                  hasTranscript={Boolean(rawTranscript && rawTranscript.length > 30)}
+                />
               ) : (
-                <Box 
-                  sx={{ 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    height: '100%',
-                    animation: 'fadeIn 0.5s ease-out',
-                    '@keyframes fadeIn': {
-                      '0%': { opacity: 0 },
-                      '100%': { opacity: 1 }
-                    }
-                  }}
-                >
-                  <ChatIcon color="action" sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
-                  <Typography variant="h6" color="textSecondary" align="center">No transcript available</Typography>
-                  <Typography variant="body2" color="textSecondary" align="center" sx={{mt:1, mb: 2, maxWidth: '70%'}}>
-                    Record or load a meeting first to chat about it.
-                  </Typography>
-                  <Button 
-                    variant="contained" 
-                    color="primary" 
-                    onClick={() => setTabValue(0)}
-                    sx={{ 
-                      mt: 2, 
-                      borderRadius: '24px',
-                      px: 3,
-                      boxShadow: '0 3px 5px rgba(0,0,0,0.12)',
-                      '&:hover': {
-                        boxShadow: '0 5px 8px rgba(0,0,0,0.2)'
-                      }
-                    }}
-                  >
-                    Go to Recording
-                  </Button>
-                </Box>
+                <EmptyState 
+                  type="chat"
+                  hasTranscript={false}
+                  buttonText="Go to Recording"
+                  onButtonClick={() => setTabValue(0)}
+                />
               )
             )}
-          </Box>          <Box 
-            component="form" 
-            onSubmit={handleChatSubmit} 
-            sx={{ 
-              p: 1.5, 
-              backgroundColor: 'transparent',
-              flexShrink: 0,
-              position: 'relative',
-              '&:before': {
-                content: '""',
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                height: '1px',
-                background: 'linear-gradient(to right, transparent, rgba(0,0,0,0.06), transparent)',
-              }
-            }}
-          >
-            <TextField
-              fullWidth
-              variant="outlined"
-              size="medium"
-              placeholder={rawTranscript 
-                ? "Ask a question about the transcript..." 
-                : "Record or load a meeting first"}
-              value={chatQuery}
-              onChange={(e) => setChatQuery(e.target.value)}
-              disabled={isAiResponding || !rawTranscript}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: '28px',
-                  backgroundColor: rawTranscript ? 'white' : 'rgba(0, 0, 0, 0.02)',
-                  border: 'none',
-                  transition: 'all 0.2s ease-in-out',
-                  boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
-                  '&.Mui-focused': {
-                    boxShadow: '0 0 0 3px rgba(25, 118, 210, 0.25), 0 2px 8px rgba(0,0,0,0.1)',
-                  },
-                  '&:hover': {
-                    boxShadow: '0 3px 8px rgba(0,0,0,0.08)',
-                    backgroundColor: rawTranscript ? 'white' : 'rgba(0, 0, 0, 0.03)'
-                  },
-                  '& .MuiOutlinedInput-notchedOutline': {
-                    borderColor: 'rgba(0, 0, 0, 0.1)',
-                    borderWidth: '1px'
-                  }
-                },
-                '& .MuiOutlinedInput-input': {
-                  padding: '14px 16px',
-                  fontSize: '0.95rem'
-                },
-                '& .MuiInputBase-root.Mui-disabled': {
-                  backgroundColor: 'rgba(0, 0, 0, 0.04)',
-                  opacity: 0.8,
-                  '& .MuiOutlinedInput-notchedOutline': {
-                    borderColor: 'rgba(0, 0, 0, 0.1)'
-                  }
-                }
-              }}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      type="submit"
-                      color={chatQuery.trim() && !isAiResponding && rawTranscript ? "primary" : "default"}
-                      disabled={!chatQuery.trim() || isAiResponding || !rawTranscript}
-                      title={!rawTranscript ? "No transcript available" : "Send message"}
-                      sx={{ 
-                        mx: 0.5, // Add margin for better spacing
-                        bgcolor: chatQuery.trim() && !isAiResponding && rawTranscript 
-                          ? 'primary.main' 
-                          : 'transparent',
-                        color: chatQuery.trim() && !isAiResponding && rawTranscript 
-                          ? 'white' 
-                          : undefined,
-                        transform: chatQuery.trim() && !isAiResponding && rawTranscript 
-                          ? 'scale(1.1)' // Make active button slightly larger
-                          : 'scale(1)',
-                        transition: 'all 0.2s ease',
-                        '&:hover': {
-                          bgcolor: chatQuery.trim() && !isAiResponding && rawTranscript 
-                            ? 'primary.dark' 
-                            : undefined,
-                          transform: chatQuery.trim() && !isAiResponding && rawTranscript 
-                            ? 'scale(1.15)' // Grow slightly on hover when active
-                            : 'scale(1.05)'
-                        }
-                      }}
-                    >
-                      {isAiResponding ? 
-                        <CircularProgress 
-                          size={22} 
-                          thickness={4} 
-                          color="inherit"
-                          sx={{
-                            animation: 'pulse 1.2s ease-in-out infinite alternate',
-                            '@keyframes pulse': {
-                              '0%': { opacity: 0.6 },
-                              '100%': { opacity: 1 }
-                            }
-                          }}
-                        /> : 
-                        <SendIcon />
-                      }
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}              onKeyDown={(e) => {
-                // Submit on Enter (not Shift+Enter)
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  // Only if we have content and not already processing
-                  if (chatQuery.trim() && !isAiResponding && rawTranscript) {
-                    e.preventDefault();
-                    handleChatSubmit(e);
-                  } else if (!rawTranscript) {
-                    // Provide feedback if no transcript available
-                    e.preventDefault();
-                    setError('Please record or load a meeting first before chatting.');
-                  } else if (!chatQuery.trim()) {
-                    // Empty query feedback
-                    e.preventDefault();
-                  }
-                } else if (e.key === 'Escape') {
-                  // Clear input on Escape
-                  setChatQuery('');
-                  e.target.blur();
-                }
-              }}
-            />
           </Box>
+          
+          <EnhancedChatInput 
+            chatQuery={chatQuery}
+            setChatQuery={setChatQuery}
+            handleChatSubmit={handleChatSubmit}
+            isAiResponding={isAiResponding}
+            rawTranscript={rawTranscript}
+            setError={setError}
+          />
         </Box>
       </TabPanel>
 
       {/* Summary Tab */}      <TabPanel hidden={tabValue !== 2} value={tabValue} index={2}>
-        {summary ? (
-         <Box>
-            <Card sx={{ mb: 3, boxShadow: 3 }}>
-                <CardContent>
-                    <Typography variant="h5" gutterBottom component="div" color="primary.main">{summary.title || "Meeting Summary"}</Typography>
-                    <Divider sx={{ my: 2 }} />
-                    {summary.overall && (<Box mb={2}><Typography variant="subtitle1" fontWeight="bold">Overall Summary</Typography><Typography variant="body2" sx={{whiteSpace: 'pre-wrap', mt:0.5}}>{summary.overall}</Typography></Box>)}
-                    {summary.keyPoints && summary.keyPoints.length > 0 && (<Box mb={2}><Typography variant="subtitle1" fontWeight="bold">Key Discussion Points</Typography><List dense sx={{pt:0}}>{summary.keyPoints.map((point, index) => (<ListItem key={`kp-${index}`} sx={{pl:0}}><ListItemIcon sx={{minWidth: 28}}><CheckCircleIcon fontSize="small" color="action" /></ListItemIcon><ListItemText primary={point} /></ListItem>))}</List></Box>)}
-                    {summary.actionItems && summary.actionItems.length > 0 && (<Box><Typography variant="subtitle1" fontWeight="bold">Action Items</Typography><List dense sx={{pt:0}}>{summary.actionItems.map((item, index) => (<ListItem key={`ai-${index}`} sx={{pl:0}}><ListItemIcon sx={{minWidth: 28}}><InsightsIcon fontSize="small" color="secondary" /></ListItemIcon><ListItemText primary={item} /></ListItem>))}</List></Box>)}
+        {summary ? (         <Box>            <Card sx={{ 
+                mb: 3, 
+                boxShadow: '0 4px 20px rgba(11, 79, 117, 0.1)',
+                borderRadius: '16px',
+                overflow: 'hidden',
+                transition: 'all 0.3s ease',
+                border: '1px solid rgba(226, 232, 240, 0.8)',
+                '&:hover': {
+                  boxShadow: '0 6px 24px rgba(11, 79, 117, 0.15)',
+                  transform: 'translateY(-2px)'
+                }
+            }}>
+                <CardContent sx={{ p: 3 }}>                    <Typography 
+                      variant="h5" 
+                      gutterBottom 
+                      component="div" 
+                      sx={{
+                        color: '#0b4f75', 
+                        fontWeight: 600,
+                        fontSize: '1.5rem',
+                        letterSpacing: '-0.01em'
+                      }}
+                    >
+                      {summary.title || "Meeting Summary"}
+                    </Typography>
+                    <Divider sx={{ my: 2, borderColor: 'rgba(226, 232, 240, 0.8)' }} />                    {summary.overall && (
+                      <Box mb={2}>
+                        <Typography 
+                          variant="subtitle1" 
+                          sx={{
+                            fontWeight: 600,
+                            color: '#0b4f75',
+                            fontSize: '1.1rem',
+                            mb: 1
+                          }}
+                        >
+                          Overall Summary
+                        </Typography>
+                        <Typography 
+                          variant="body2" 
+                          sx={{
+                            whiteSpace: 'pre-wrap', 
+                            mt: 0.5,
+                            color: '#334155',
+                            lineHeight: 1.6
+                          }}
+                        >
+                          {summary.overall}
+                        </Typography>
+                      </Box>
+                    )}
+                      {/* Dynamic sections from AI analysis */}
+                    {summary.sections && summary.sections.map((section, sectionIndex) => (
+                      <Box key={`section-${sectionIndex}`} mb={2}>
+                        <Typography 
+                          variant="subtitle1" 
+                          sx={{
+                            fontWeight: 600,
+                            color: '#0b4f75',
+                            fontSize: '1.1rem',
+                            mb: 1
+                          }}
+                        >
+                          {section.headline}
+                        </Typography>
+                        <List dense sx={{pt:0}}>                          {section.bulletPoints.map((point, pointIndex) => (
+                            <ListItem 
+                              key={`section-${sectionIndex}-point-${pointIndex}`} 
+                              sx={{
+                                pl: 0,
+                                py: 0.8,
+                                transition: 'all 0.2s ease',
+                                '&:hover': {
+                                  backgroundColor: 'rgba(11, 79, 117, 0.03)',
+                                  borderRadius: '8px'
+                                }
+                              }}
+                            >
+                              <ListItemIcon sx={{minWidth: 32}}>
+                                {section.headline.toLowerCase().includes('action') || 
+                                 section.headline.toLowerCase().includes('next step') ||
+                                 section.headline.toLowerCase().includes('task') ? (
+                                  <InsightsIcon 
+                                    fontSize="small"
+                                    sx={{ color: '#ff7300' }}
+                                  />
+                                ) : (
+                                  <CheckCircleIcon 
+                                    fontSize="small" 
+                                    sx={{ color: '#0b4f75' }}
+                                  />
+                                )}
+                              </ListItemIcon>
+                              <ListItemText 
+                                primary={point} 
+                                primaryTypographyProps={{
+                                  sx: {
+                                    color: '#334155',
+                                    fontSize: '0.95rem',
+                                    lineHeight: 1.5
+                                  }
+                                }}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      </Box>
+                    ))}
+                    
+                    {/* For backward compatibility with the old format */}
+                    {(!summary.sections || summary.sections.length === 0) && (
+                      <>
+                        {summary.keyPoints && summary.keyPoints.length > 0 && (
+                          <Box mb={2}>
+                            <Typography variant="subtitle1" fontWeight="bold">Key Discussion Points</Typography>
+                            <List dense sx={{pt:0}}>
+                              {summary.keyPoints.map((point, index) => (
+                                <ListItem key={`kp-${index}`} sx={{pl:0}}>
+                                  <ListItemIcon sx={{minWidth: 28}}>
+                                    <CheckCircleIcon fontSize="small" color="action" />
+                                  </ListItemIcon>
+                                  <ListItemText primary={point} />
+                                </ListItem>
+                              ))}
+                            </List>
+                          </Box>
+                        )}
+                        
+                        {summary.actionItems && summary.actionItems.length > 0 && (
+                          <Box>
+                            <Typography variant="subtitle1" fontWeight="bold">Action Items</Typography>
+                            <List dense sx={{pt:0}}>
+                              {summary.actionItems.map((item, index) => (
+                                <ListItem key={`ai-${index}`} sx={{pl:0}}>
+                                  <ListItemIcon sx={{minWidth: 28}}>
+                                    <InsightsIcon fontSize="small" color="secondary" />
+                                  </ListItemIcon>
+                                  <ListItemText primary={item} />
+                                </ListItem>
+                              ))}
+                            </List>
+                          </Box>
+                        )}
+                      </>
+                    )}
                 </CardContent>
-            </Card>
-            <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                <Button variant="outlined" startIcon={<InsightsIcon />} sx={{ mr: 1 }}>Export Summary</Button>
+            </Card>            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+                <Button 
+                  variant="outlined" 
+                  startIcon={<InsightsIcon />} 
+                  sx={{ 
+                    borderRadius: '24px',
+                    borderColor: '#0b4f75',
+                    color: '#0b4f75',
+                    fontWeight: 600,
+                    padding: '8px 24px',
+                    textTransform: 'none',
+                    boxShadow: '0 2px 6px rgba(11, 79, 117, 0.05)',
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      borderColor: '#ff7300',
+                      color: '#ff7300',
+                      backgroundColor: 'rgba(255, 115, 0, 0.04)',
+                      boxShadow: '0 4px 10px rgba(11, 79, 117, 0.1)',
+                      transform: 'translateY(-2px)'
+                    }
+                  }}
+                >
+                  Export Summary
+                </Button>
             </Box>
-         </Box>
-        ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}> <SummarizeIcon color="action" sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} /> <Typography variant="h6" color="textSecondary" align="center">No summary available yet.</Typography> <Button variant="contained" color="primary" onClick={generateSummary} disabled={!rawTranscript || isProcessing} sx={{ mt: 2 }}>Generate Summary</Button> </Box>
+         </Box>        ) : (
+          <Box 
+            sx={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              height: '100%',
+              padding: 4
+            }}
+          > 
+            <EmptyState 
+              type="summary" 
+              hasTranscript={Boolean(rawTranscript && rawTranscript.length > 30)}
+              buttonText={isProcessing ? 'Generating...' : 'Generate Summary'}
+              onButtonClick={generateSummary}
+              buttonDisabled={!rawTranscript || isProcessing}
+              buttonIcon={isProcessing ? <CircularProgress size={20} color="inherit" /> : <SummarizeIcon />}
+            />
+          </Box>
         )}
-      </TabPanel>
-
-      {/* Snackbar for notifications */}
-      <Snackbar
+      </TabPanel>      {/* Snackbar for notifications */}
+      <EnhancedNotifications
         open={snackbarOpen}
-        autoHideDuration={5000}
-        onClose={handleSnackbarClose}
         message={snackbarMessage}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        sx={{
-          '& .MuiSnackbarContent-root': {
-            bgcolor: 'success.main',
-            minWidth: '250px',
-            fontWeight: 500
-          }
-        }}
+        severity="success"
+        onClose={handleSnackbarClose}
+        position={{ vertical: 'bottom', horizontal: 'center' }}
       />
     </Box>
   );
