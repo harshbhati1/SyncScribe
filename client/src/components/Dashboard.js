@@ -240,27 +240,14 @@ const Dashboard = () => {
   const [tabValue, setTabValue] = useState(0);
   const [meetings, setMeetings] = useState([]); // Updated to use state setter
   const [sidebarOpen, setSidebarOpen] = useState(false); // Default closed on all devices
-
   // We don't need to adjust sidebar visibility on resize anymore
   // since it will always overlay content when opened
     
   // Organize meetings by date
-  const [favorites, setFavorites] = useState([
-    { id: 'fav1', title: 'Weekly standup meeting', date: '2025-05-15' },
-    { id: 'fav2', title: 'Product roadmap discussion', date: '2025-05-10' },
-    { id: 'fav3', title: 'UX review with design team', date: '2025-05-08' },
-    { id: 'fav4', title: 'Quarterly planning session', date: '2025-05-05' },
-    { id: 'fav5', title: 'API integration discussion', date: '2025-05-03' },
-    { id: 'fav6', title: 'Customer feedback analysis', date: '2025-05-01' },
-  ]);
+  const [favorites, setFavorites] = useState([]);
+  const [recentMeetings, setRecentMeetings] = useState([]);
+  const [allMeetings, setAllMeetings] = useState([]);
   
-  // Group recent meetings by date
-  const [recentMeetings, setRecentMeetings] = useState([
-    { id: 'recent1', title: 'Marketing strategy review', date: '2025-05-17' },
-    { id: 'recent2', title: 'UI/UX feedback session', date: '2025-05-16' },
-    { id: 'recent3', title: 'Customer interview notes', date: '2025-05-14' },
-  ]);
-
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   const [activeItem, setActiveItem] = useState(null);
   
@@ -287,20 +274,43 @@ const Dashboard = () => {
     setMenuAnchorEl(null);
     setActiveItem(null);
   };
-  
-  const toggleFavorite = (meeting) => {
-    // Check if meeting is already in favorites
-    const isFavorite = favorites.some(fav => fav.id === meeting.id);
-    
-    if (isFavorite) {
-      // Remove from favorites
-      setFavorites(favorites.filter(fav => fav.id !== meeting.id));
-    } else {
-      // Add to favorites - no limit
-      setFavorites([...favorites, meeting]);
+    const toggleFavorite = async (meeting) => {
+    try {
+      // Check if meeting is already in favorites
+      const isFavorite = favorites.some(fav => fav.id === meeting.id);
+      
+      // First update the UI state for responsiveness
+      if (isFavorite) {
+        // Remove from favorites
+        setFavorites(favorites.filter(fav => fav.id !== meeting.id));
+      } else {
+        // Add to favorites
+        setFavorites([...favorites, meeting]);
+      }
+      
+      // Then update in Firestore
+      const { transcriptionAPI } = await import('../services/api');
+      
+      // Only update real meetings (not demo ones)
+      if (!meeting.id.startsWith('fav') && !meeting.id.startsWith('recent')) {
+        await transcriptionAPI.updateMeetingFavorite(meeting.id, !isFavorite);
+      }
+      
+      handleMenuClose();
+    } catch (err) {
+      console.error('Error toggling favorite status:', err);
+      setError('Failed to update favorite status. Please try again.');
+      
+      // Revert UI state if there was an error
+      const isFavorite = favorites.some(fav => fav.id === meeting.id);
+      if (isFavorite) {
+        // Meeting was removed, add it back
+        setFavorites([...favorites, meeting]);
+      } else {
+        // Meeting was added, remove it
+        setFavorites(favorites.filter(fav => fav.id !== meeting.id));
+      }
     }
-    
-    handleMenuClose();
   };
     // Function to open the rename dialog
   const handleRenameOpen = () => {
@@ -319,7 +329,7 @@ const Dashboard = () => {
     // Clean up the activeItem when dialog is closed without renaming
     setActiveItem(null);
   };
-    // Function to handle the rename meeting action
+  // Function to handle the rename meeting action
   const handleRenameMeeting = async () => {
     if (!newMeetingTitle.trim()) return;
     
@@ -341,6 +351,11 @@ const Dashboard = () => {
         // Only update in Firestore if it's a real meeting (not a demo one)
         await transcriptionAPI.updateMeetingTitle(activeItem.id, newMeetingTitle);
       }
+      
+      // Update all meetings data
+      setAllMeetings(allMeetings.map(meeting => 
+        meeting.id === activeItem.id ? { ...meeting, title: newMeetingTitle } : meeting
+      ));
       
       // Update the meeting title in both favorites and recentMeetings arrays
       const isFavorite = favorites.some(fav => fav.id === activeItem.id);
@@ -404,6 +419,9 @@ const Dashboard = () => {
         await transcriptionAPI.deleteMeeting(activeItem.id);
       }
       
+      // Update all state variables with meeting data
+      setAllMeetings(allMeetings.filter(meeting => meeting.id !== activeItem.id));
+      
       // Remove from favorites if it exists there
       setFavorites(favorites.filter(fav => fav.id !== activeItem.id));
       
@@ -428,13 +446,17 @@ const Dashboard = () => {
       setDeleteDialogOpen(false);
       setActiveItem(null);
     }
-  };
-  // Helper function to format date for display
+  };// Helper function to format date for display
   const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    const day = date.getDate();
-    const month = date.toLocaleString('default', { month: 'short' });
-    const year = date.getFullYear();
+    // Use current date if dateString is invalid or not provided
+    const date = dateString ? new Date(dateString) : new Date();
+    
+    // If the date is invalid, use current date
+    const validDate = !isNaN(date.getTime()) ? date : new Date();
+    
+    const day = validDate.getDate();
+    const month = validDate.toLocaleString('default', { month: 'short' });
+    const year = validDate.getFullYear();
     
     // Add ordinal suffix to day
     const ordinal = (d) => {
@@ -449,7 +471,6 @@ const Dashboard = () => {
     
     return `${day}${ordinal(day)} ${month} ${year}`;
   };
-  
   // Group meetings by date
   const getMeetingsByDate = (meetings) => {
     const grouped = {};
@@ -483,13 +504,13 @@ const Dashboard = () => {
 
     fetchProfileData();
   }, []);
-  
   // Fetch saved meetings from Firestore
   useEffect(() => {
     const fetchMeetings = async () => {
       try {
         setLoading(true);
         const { transcriptionAPI } = await import('../services/api');
+        
         const response = await transcriptionAPI.getMeetings();
         
         if (response && response.data && response.data.success) {
@@ -505,34 +526,51 @@ const Dashboard = () => {
           // Sort by date (newest first)
           formattedMeetings.sort((a, b) => new Date(b.date) - new Date(a.date));
           
-          setRecentMeetings(formattedMeetings);
-          setMeetings(fetchedMeetings); // Store the full meeting data
+          // Store all meetings
+          setAllMeetings(fetchedMeetings);
+          
+          // Get favorite meetings (implement a favorites field in your meeting objects)
+          const favoriteMeetings = formattedMeetings.filter(meeting => 
+            meeting.isFavorite || fetchedMeetings.find(m => m.id === meeting.id)?.isFavorite
+          );
+          setFavorites(favoriteMeetings);
+          
+          // Recent meetings (last 10)
+          setRecentMeetings(formattedMeetings.slice(0, 10));
+        } else {
+          // If no meetings found or API error, initialize with empty arrays
+          setAllMeetings([]);
+          setRecentMeetings([]);
+          setFavorites([]);
         }
       } catch (err) {
-        console.error('Error fetching meetings:', err);
-        setError('Failed to load meetings');
+        console.error('Error in meetings setup:', err);
+        setError('Failed to setup meetings');
+        // Initialize with empty arrays on error
+        setAllMeetings([]);
+        setRecentMeetings([]);
+        setFavorites([]);
       } finally {
         setLoading(false);
       }
     };
     
-    // Only fetch if user is authenticated
+    // Only execute if user is authenticated
     if (currentUser) {
       fetchMeetings();
     }
-  }, [currentUser]);
-
-  // Sync meeting names from localStorage when returning to Dashboard
+  }, [currentUser]);  // Sync meeting names from localStorage when returning to Dashboard
   useEffect(() => {
     const storedMeetingId = localStorage.getItem('currentMeetingId');
     const storedMeetingTitle = localStorage.getItem('currentMeetingTitle');
     
     if (storedMeetingId && storedMeetingTitle) {
-      // Check if this meeting exists in favorites or recent meetings
+      // Check if this meeting exists in favorites, recent meetings, or all meetings
       const isFavorite = favorites.some(fav => fav.id === storedMeetingId);
       const isRecent = recentMeetings.some(meeting => meeting.id === storedMeetingId);
+      const isMeetingInAllMeetings = allMeetings.some(meeting => meeting.id === storedMeetingId);
       
-      // Update the title if needed
+      // Update the title if needed in all meeting arrays
       if (isFavorite) {
         setFavorites(favorites.map(fav => 
           fav.id === storedMeetingId ? { ...fav, title: storedMeetingTitle } : fav
@@ -541,10 +579,17 @@ const Dashboard = () => {
       
       if (isRecent) {
         setRecentMeetings(recentMeetings.map(meeting => 
-          meeting.id === storedMeetingId ? { ...meeting, title: storedMeetingTitle } : meeting        ));
+          meeting.id === storedMeetingId ? { ...meeting, title: storedMeetingTitle } : meeting
+        ));
+      }
+      
+      if (isMeetingInAllMeetings) {
+        setAllMeetings(allMeetings.map(meeting => 
+          meeting.id === storedMeetingId ? { ...meeting, title: storedMeetingTitle } : meeting
+        ));
       }
     }
-  }, []); // Empty dependency array means this runs once on component mount
+  }, [allMeetings, favorites, recentMeetings]); // Add dependencies to update when they change
   const handleLogout = async () => {
     try {
       await logOut();
@@ -631,8 +676,7 @@ const Dashboard = () => {
             overflow: 'hidden'
           }}>
             {/* FAVORITES section - limited to 3 visible items by default */}
-            <Box>
-              <NavTitle>FAVORITES</NavTitle>
+            <Box>              <NavTitle>FAVORITES</NavTitle>
               <NavSection 
                 scrollable={favorites.length > 3} 
                 sx={{ 
@@ -640,58 +684,70 @@ const Dashboard = () => {
                   overflowY: favorites.length > 3 ? 'auto' : 'visible'
                 }}
               >
-                {favorites.map(fav => (
-                  <Box
-                    key={fav.id}
-                    sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      width: '100%',
-                      mb: 0.5,
-                    }}
-                  >
-                    <NavItem 
-                      onClick={() => {
-                        // Store meeting info in localStorage before navigating
-                        localStorage.setItem('currentMeetingTitle', fav.title);
-                        localStorage.setItem('currentMeetingId', fav.id);
-                        navigate(`/transcription/${fav.id}`);
-                        if (window.innerWidth < 960) {
-                          toggleSidebar(); // Close sidebar on mobile after selection
-                        }
-                      }}
+                {loading ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
+                    <CircularProgress size={24} sx={{ color: '#ff7300' }} />
+                  </Box>
+                ) : favorites.length === 0 ? (
+                  <Box sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">
+                      No favorited meetings yet
+                    </Typography>
+                  </Box>
+                ) : (
+                  favorites.map(fav => (
+                    <Box
+                      key={fav.id}
                       sx={{ 
-                        flexGrow: 1,
-                        mb: 0,
-                        pr: 1,
-                        textAlign: 'left',
-                        justifyContent: 'flex-start',
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        width: '100%',
+                        mb: 0.5,
                       }}
                     >
-                      <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                        <StarIcon sx={{ fontSize: 18, mr: 1.5, color: '#ff7300', flexShrink: 0 }} />
-                        <Box sx={{ 
-                          flexGrow: 1, 
-                          overflow: 'hidden', 
-                          textOverflow: 'ellipsis', 
-                          whiteSpace: 'nowrap',
+                      <NavItem 
+                        onClick={() => {
+                          // Store meeting info in localStorage before navigating
+                          localStorage.setItem('currentMeetingTitle', fav.title);
+                          localStorage.setItem('currentMeetingId', fav.id);
+                          navigate(`/transcription/${fav.id}`);
+                          if (window.innerWidth < 960) {
+                            toggleSidebar(); // Close sidebar on mobile after selection
+                          }
+                        }}
+                        sx={{ 
+                          flexGrow: 1,
+                          mb: 0,
+                          pr: 1,
                           textAlign: 'left',
                           justifyContent: 'flex-start',
-                          display: 'block'
-                        }}>
-                          {fav.title}
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                          <StarIcon sx={{ fontSize: 18, mr: 1.5, color: '#ff7300', flexShrink: 0 }} />
+                          <Box sx={{ 
+                            flexGrow: 1, 
+                            overflow: 'hidden', 
+                            textOverflow: 'ellipsis', 
+                            whiteSpace: 'nowrap',
+                            textAlign: 'left',
+                            justifyContent: 'flex-start',
+                            display: 'block'
+                          }}>
+                            {fav.title}
+                          </Box>
                         </Box>
-                      </Box>
-                    </NavItem>
-                    <IconButton 
-                      size="small" 
-                      sx={{ width: 28, height: 28, opacity: 0.6 }}
-                      onClick={(e) => handleMenuOpen(e, fav)}
-                    >
-                      <MoreVertIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                ))}
+                      </NavItem>
+                      <IconButton 
+                        size="small" 
+                        sx={{ width: 28, height: 28, opacity: 0.6 }}
+                        onClick={(e) => handleMenuOpen(e, fav)}
+                      >
+                        <MoreVertIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  ))
+                )}
               </NavSection>
               {favorites.length > 3 && (
                 <Box 
@@ -887,16 +943,9 @@ const Dashboard = () => {
             <Tab label="Questions" />
             <Tab label="Calendar" />
           </Tabs>
-        </StyledAppBar>
-
-        {/* Tab Content Panels */}
-        <TabPanel hidden={tabValue !== 0} value={tabValue} index={0}>
+        </StyledAppBar>        {/* Tab Content Panels */}        <TabPanel hidden={tabValue !== 0} value={tabValue} index={0}>
           <Box sx={{ px: 2, py: 1 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-              Today, May 18
-            </Typography>
-              {/* Meeting Cards */}
-            {meetings.length === 0 ? (              <Box sx={{ 
+                      {/* Meeting Cards */}              <Box sx={{ 
                 display: 'flex', 
                 flexDirection: 'column', 
                 alignItems: 'center', 
@@ -906,8 +955,7 @@ const Dashboard = () => {
                 height: '40vh',
                 width: '100%',
                 px: 2
-              }}>
-                <Typography 
+              }}>                <Typography 
                   variant="h4" 
                   align="center" 
                   sx={{ 
@@ -928,44 +976,7 @@ const Dashboard = () => {
                   Ask questions about your past meetings and conversations!
                 </Typography>
               </Box>
-            ) : (
-              // Map through meetings
-              meetings.map((meeting) => (                <MeetingCard 
-                  key={meeting.id}
-                  onClick={() => {
-                    // Store meeting info in localStorage before navigating
-                    localStorage.setItem('currentMeetingTitle', meeting.title);
-                    localStorage.setItem('currentMeetingId', meeting.id);
-                    navigate(`/transcription/${meeting.id}`);
-                  }}
-                  sx={{ cursor: 'pointer' }}
-                >
-                  <CardContent sx={{ pb: 2, '&:last-child': { pb: 2 } }}>
-                    <Box sx={{ display: 'flex' }}>
-                      <Box sx={{ mr: 2, width: 50, textAlign: 'center' }}>
-                        <MeetingTime>{meeting.time}</MeetingTime>
-                        <MeetingTime>am</MeetingTime>
-                      </Box>
-                      <Box sx={{ flexGrow: 1 }}>
-                        <Typography variant="subtitle1" sx={{ fontSize: '0.9rem', fontWeight: 600, mb: 0.5 }}>
-                          {meeting.title}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', mb: 0.5 }}>
-                          {meeting.subtitle}
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Avatar sx={{ width: 20, height: 20, bgcolor: 'primary.main', fontSize: '0.7rem' }}>
-                            {meeting.participants}
-                          </Avatar>
-                          <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-                            {meeting.time} - {meeting.endTime}
-                          </Typography>
-                        </Box>
-                      </Box>
-                    </Box>
-                  </CardContent>
-                </MeetingCard>              ))
-            )}            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
               <Paper
                 component="form"
                 sx={{ 
@@ -1038,9 +1049,7 @@ const Dashboard = () => {
         >
           {error}
         </Alert>
-      )}
-      
-      {/* Context Menu for Meeting Items */}
+      )}            {/* Context Menu for Meeting Items */}
       <Menu
         anchorEl={menuAnchorEl}
         open={Boolean(menuAnchorEl)}

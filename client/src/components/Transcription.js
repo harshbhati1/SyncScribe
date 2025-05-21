@@ -169,29 +169,34 @@ const Transcription = () => {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatMessages]);
-
   // Meeting title logic based on meetingId
   useEffect(() => {
     if (meetingId) {
       const storedMeetingId = localStorage.getItem('currentMeetingId');
       const storedMeetingTitle = localStorage.getItem('currentMeetingTitle');
+      
+      // Use stored title if available
       if (storedMeetingId === meetingId && storedMeetingTitle) {
         setMeetingTitle(storedMeetingTitle);
       } else {
-        // Basic fallback, in a real app, you'd fetch if not matching
-        if (meetingId.startsWith('fav')) { // Example for demo favorites
-          const favTitles = { 'fav1': 'Weekly standup meeting', 'fav2': 'Product roadmap discussion' };
-          setMeetingTitle(favTitles[meetingId] || `Meeting ${meetingId}`);
-          if (favTitles[meetingId]) {
-            localStorage.setItem('currentMeetingId', meetingId);
-            localStorage.setItem('currentMeetingTitle', favTitles[meetingId]);
-          }
-        } else {
-          setMeetingTitle(`Meeting ${meetingId}`); // Generic title if not a known favorite
-        }
+        // If no stored title, try to fetch from API or use generic name
+        setMeetingTitle(`Meeting ${meetingId}`);
+        
+        // In a real implementation, you would fetch the meeting details
+        // from your API here to get the actual title
+        
+        // Example of how you might fetch the meeting title:
+        // transcriptionAPI.getMeeting(meetingId).then(response => {
+        //   if (response?.data?.title) {
+        //     setMeetingTitle(response.data.title);
+        //     localStorage.setItem('currentMeetingId', meetingId);
+        //     localStorage.setItem('currentMeetingTitle', response.data.title);
+        //   }
+        // }).catch(err => console.error('Error fetching meeting title:', err));
       }
     } else {
-        setMeetingTitle(localStorage.getItem('currentMeetingTitle') || 'New Meeting');
+      // For a new meeting
+      setMeetingTitle(localStorage.getItem('currentMeetingTitle') || 'New Meeting');
     }
   }, [meetingId]);
   // Title editing handlers
@@ -236,8 +241,7 @@ const Transcription = () => {
         await refreshToken(true);
         console.log('Refreshed token before saving meeting');
       }
-      
-      // Create meeting data object
+        // Create meeting data object
       const meetingData = {
         id: meetingId || `meeting-${Date.now()}`, // Use existing or generate new
         title: meetingTitle,
@@ -245,7 +249,9 @@ const Transcription = () => {
         segments: transcriptionSegments,
         chatHistory: chatMessages, // Include chat history
         summary: summary, // Include summary if available
-        date: new Date().toISOString()
+        date: new Date().toISOString(), // Always use current date/time
+        createdAt: meetingId ? undefined : new Date().toISOString(), // Set createdAt only for new meetings
+        updatedAt: new Date().toISOString() // Always update the updatedAt timestamp
       };
       
       // Save meeting data to Firestore through API

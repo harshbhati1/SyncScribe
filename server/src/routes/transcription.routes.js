@@ -210,6 +210,51 @@ router.patch('/meeting/:meetingId/title', authMiddleware, async (req, res) => {
   }
 });
 
+// Route to update a meeting favorite status
+router.patch('/meeting/:meetingId/favorite', authMiddleware, async (req, res) => {
+  console.log('[PATCH /meeting/:meetingId/favorite] Updating meeting favorite status');
+  try {
+    const { meetingId } = req.params;
+    const { isFavorite } = req.body;
+    
+    if (typeof isFavorite !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        error: 'isFavorite boolean value is required'
+      });
+    }
+    
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Unauthorized access. User ID not found in token.' 
+      });
+    }
+    
+    const userId = req.user.uid;
+    
+    // Update meeting favorite status in Firestore
+    const meetingRef = db.collection('users').doc(userId).collection('meetings').doc(meetingId);
+    await meetingRef.update({
+      isFavorite,
+      updatedAt: new Date().toISOString()
+    });
+    
+    console.log(`[PATCH /meeting/:meetingId/favorite] Favorite status updated successfully for meeting ${meetingId}`);
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Meeting favorite status updated successfully'
+    });
+  } catch (error) {
+    console.error('[PATCH /meeting/:meetingId/favorite] Error updating meeting favorite status:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to update meeting favorite status'
+    });
+  }
+});
+
 // Route to delete a meeting
 router.delete('/meeting/:meetingId', authMiddleware, async (req, res) => {
   console.log('[DELETE /meeting/:meetingId] Deleting meeting');

@@ -339,6 +339,12 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
     body: JSON.stringify({ title })
   }),
   
+  // Method to update a meeting favorite status
+  updateMeetingFavorite: (meetingId, isFavorite) => apiRequest(`/transcription/meeting/${meetingId}/favorite`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isFavorite })
+  }),
+  
   // Method to delete a meeting
   deleteMeeting: (meetingId) => apiRequest(`/transcription/meeting/${meetingId}`, {
     method: 'DELETE'
