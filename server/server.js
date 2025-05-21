@@ -108,11 +108,13 @@ app.use((err, req, res, next) => {
 const authRoutes = require('./src/routes/auth.routes');
 const transcriptionRoutes = require('./src/routes/transcription.routes');
 const chatRoutes = require('./src/routes/chatRoutes'); // Correct import, no .js extension needed
+const summaryRoutes = require('./src/routes/summary.routes');
 
 // Route middleware
 app.use('/api/auth', authRoutes);
 app.use('/api/transcription', transcriptionRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/summary', summaryRoutes);
 
 // Handle 404 routes
 app.use((req, res) => {

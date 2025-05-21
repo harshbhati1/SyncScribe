@@ -42,8 +42,7 @@ router.post('/', authMiddleware, async (req, res) => {
         // Always prefer geminiChat which is specifically set to gemini-2.0-flash in the config
         geminiChatModel = geminiConfig.geminiChat || geminiConfig.geminiPro;
         
-        // Import the model verifier
-        const { verifyModel, isRateLimitError } = require('../utils/modelVerifier');
+        // Import error utilities
         const { createApiError, ErrorCodes } = require('../utils/error.utils');
         
         // Verify we have the correct model
@@ -52,15 +51,7 @@ router.post('/', authMiddleware, async (req, res) => {
             throw new Error('AI service model is not available.');
         }
         
-        // Check the model being used
-        const modelInfo = verifyModel(geminiChatModel);
-        if (!modelInfo.isCorrect) {
-            console.warn(`[POST /api/chat] Warning: Using non-preferred model: ${modelInfo.name} (should be gemini-2.0-flash)`);
-            // Continue anyway, but log the warning
-        } else {
-            console.log(`[POST /api/chat] Using correct model: ${modelInfo.name}`);
-        }
-        
+        // Check if the model supports startChat
         if (typeof geminiChatModel.startChat !== 'function') {
             console.error('[POST /api/chat] Gemini chat model lacks startChat method.');
             throw new Error('AI service model is misconfigured.');
@@ -69,12 +60,13 @@ router.post('/', authMiddleware, async (req, res) => {
         console.log('[POST /api/chat] Gemini chat model loaded successfully.');
     } catch (initError) {
         console.error('[POST /api/chat] CRITICAL: Failed to initialize Gemini:', initError.message);
+        const { createApiError, ErrorCodes } = require('../utils/error.utils');
         return res.status(500).json(createApiError(
             'Failed to initialize AI service.', 
             ErrorCodes.MODEL_ERROR, 
             { details: initError.message }
         ));
-    }    try {
+    }try {
         const systemInstruction = `You are a helpful AI assistant for the TwinMind application.
 Analyze the provided meeting transcript to answer questions.
 If the transcript is short or information is missing, state that.
@@ -136,8 +128,7 @@ ${transcript}
         }
         
         // Import error utilities if not already imported
-        const { isRateLimitError } = require('../utils/modelVerifier');
-        const { formatUserFriendlyError, ErrorCodes } = require('../utils/error.utils');
+        const { formatUserFriendlyError, ErrorCodes, isRateLimitError } = require('../utils/error.utils');
         
         if (res.headersSent) {
             try {
@@ -177,8 +168,7 @@ ${transcript}
             } finally {
                 res.end();
             }
-        } else {
-            // If headers haven't been sent, send a standard JSON error response
+        } else {            // If headers haven't been sent, send a standard JSON error response
             let statusCode = 500;
             let errorMessage = 'Failed to process chat message.';
             

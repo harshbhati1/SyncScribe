@@ -289,11 +289,19 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
   // New method to fetch an existing meeting by ID
   getMeeting: (meetingId) => apiRequest(`/transcription/meeting/${meetingId}`, {
     method: 'GET'
-  }),
-  // New method to save a meeting
+  }),  // New method to save a meeting
   saveMeeting: (meeting) => apiRequest('/transcription/meeting', {
     method: 'POST',
     body: JSON.stringify(meeting)
+  }),
+  
+  // Method to generate a meeting summary
+  generateSummary: (transcript, meetingId) => apiRequest('/summary/generate', {
+    method: 'POST',
+    body: JSON.stringify({
+      transcript,
+      meetingId
+    })
   })
 };
 

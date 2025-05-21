@@ -22,6 +22,7 @@ import {
   CardContent,
   AppBar,
   Toolbar,
+  Snackbar,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import SaveIcon from '@mui/icons-material/Save';
@@ -107,6 +108,8 @@ const Transcription = () => {
   const [chatQuery, setChatQuery] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
   const [audioLevelsLocal, setAudioLevelsLocal] = useState(Array(9).fill({ level: 3, isSilent: true })); // For local recorder viz
   const [isAiResponding, setIsAiResponding] = useState(false); // For chat AI response streaming
   const [hasAutoSwitchedToChat, setHasAutoSwitchedToChat] = useState(false); // Track if we've already auto-switched to chat
@@ -122,6 +125,9 @@ const Transcription = () => {
 
   // Handle tab change
   const handleTabChange = (event, newValue) => setTabValue(newValue);
+  
+  // Handle snackbar close
+  const handleSnackbarClose = () => setSnackbarOpen(false);
 
   // Format seconds into MM:SS
   const formatTime = (seconds) => {
@@ -180,7 +186,34 @@ const Transcription = () => {
     if (text && typeof text === 'string') {
       setAnimatedDisplayedTranscript(text);
     }
-  }, []);  // --- Callback for MeetingRecorder component (updates main transcript) - no animation ---
+  }, []);  // Generate summary function - defined first so it can be referenced by handleMeetingRecorderUpdate
+  const generateSummary = useCallback(async () => {
+    if (!rawTranscript) {
+      setError("No transcript available to summarize.");
+      return;
+    }
+    try {
+      setIsProcessing(true);
+      const response = await transcriptionAPI.generateSummary(rawTranscript, meetingId);
+      if (response && response.data && response.data.summary) {
+        setSummary(response.data.summary);
+        setTabValue(2); // Switch to summary tab
+        
+        // Set success snackbar message
+        setSnackbarMessage("Summary generated successfully!");
+        setSnackbarOpen(true);
+      } else {
+         setError(response?.data?.error || 'Failed to get summary content from API.');
+      }
+    } catch (err) {
+        console.error('Error generating summary:', err);
+        setError('API call to generate summary failed.');
+    } finally {
+        setIsProcessing(false);
+    }
+  }, [rawTranscript, meetingId, setError, setSummary, setTabValue, setIsProcessing, setSnackbarMessage, setSnackbarOpen]);
+
+  // --- Callback for MeetingRecorder component (updates main transcript) - no animation ---
   const handleMeetingRecorderUpdate = useCallback((textChunk, metadata) => {
     if (metadata && metadata.type === 'reset') {
       setRawTranscript("");
@@ -222,8 +255,20 @@ const Transcription = () => {
     
     if (metadata) {
       setTranscriptionSegments(prev => [...prev, { ...metadata, text: chunkToProcess || "" }]);
+      
+      // Auto-generate summary when the final transcript chunk is received
+      if ((metadata.isFinal === true || metadata.type === 'segment_final_empty') && 
+          !isProcessing && // Avoid duplicate calls
+          rawTranscript && 
+          rawTranscript.length > 30) {
+        console.log("Recording stopped, automatically generating summary...");
+        // Use setTimeout to ensure we have the final rawTranscript with the last chunk
+        setTimeout(() => {
+          generateSummary();
+        }, 500);
+      }
     }
-  }, []);// processAnimationQueue is stable due to useCallback
+  }, [rawTranscript, isProcessing, generateSummary]);
 
   // --- Local MediaRecorder Logic (If you intend to use it alongside MeetingRecorder) ---
   // Ensure this logic is distinct or integrated if MeetingRecorder is the primary.
@@ -469,30 +514,7 @@ const Transcription = () => {
       setIsAiResponding(false);
       currentAiMessageIdRef.current = null;
       setError(`Chat error: ${apiSetupError.message || 'Failed to initiate chat'}`);
-    }
-  };
-
-  const generateSummary = async () => {
-    if (!rawTranscript) {
-      setError("No transcript available to summarize.");
-      return;
-    }
-    try {
-      setIsProcessing(true);
-      const response = await transcriptionAPI.generateSummary(rawTranscript, meetingId);
-      if (response && response.data && response.data.summary) {
-        setSummary(response.data.summary);
-        setTabValue(2); // Switch to summary tab
-      } else {
-         setError(response?.data?.error || 'Failed to get summary content from API.');
-      }
-    } catch (err) {
-        console.error('Error generating summary:', err);
-        setError('API call to generate summary failed.');
-    } finally {
-        setIsProcessing(false);
-    }
-  };
+    }  };
 
   const resetTranscriptionData = () => {
     if (window.confirm('Are you sure you want to delete this transcription and chat history? This action cannot be undone.')) {
@@ -582,10 +604,10 @@ const Transcription = () => {
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') 
       // Handle italic formatting (*text*)
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      // Handle numbered lists
-      .replace(/^\s*(\d+)\.\s+(.+)$/gm, '<div class="list-item"><span class="list-number">$1.</span> $2</div>')
-      // Handle bullet points with proper list items
-      .replace(/^\s*[*•-]\s+(.+)$/gm, '<div class="list-item">• $1</div>')
+      // Handle numbered lists - with mobile-friendly formatting
+      .replace(/^\s*(\d+)\.\s+(.+)$/gm, '<div class="list-item"><span class="list-number">$1.</span><span class="list-content">$2</span></div>')
+      // Handle bullet points with proper list items - with mobile-friendly formatting
+      .replace(/^\s*[*•-]\s+(.+)$/gm, '<div class="list-item"><span class="list-bullet">•</span><span class="list-content">$1</span></div>')
       // Preserve paragraph breaks
       .replace(/\n\s*\n/g, '<br/><br/>')
       // Format headings
@@ -593,7 +615,7 @@ const Transcription = () => {
       .replace(/^##\s+(.+)$/gm, '<span style="font-size: 1.1em; font-weight: 600; margin: 0.7em 0 0.3em 0; display: block;">$1</span>')
       .replace(/^###\s+(.+)$/gm, '<span style="font-size: 1.05em; font-weight: 600; margin: 0.6em 0 0.3em 0; display: block;">$1</span>')
       // Format code blocks
-      .replace(/`{3}([\s\S]*?)`{3}/g, '<pre style="background-color: #f5f5f5; padding: 0.5em; border-radius: 4px; font-family: monospace; overflow-x: auto;">$1</pre>')
+      .replace(/`{3}([\s\S]*?)`{3}/g, '<pre style="background-color: #f5f5f5; padding: 0.5em; border-radius: 4px; font-family: monospace; overflow-x: auto; white-space: pre-wrap; word-break: break-word;">$1</pre>')
       // Format inline code
       .replace(/`(.*?)`/g, '<code style="background-color: #f5f5f5; padding: 0.1em 0.3em; border-radius: 3px; font-family: monospace;">$1</code>')
       // Handle underscores for emphasis
@@ -656,6 +678,15 @@ const Transcription = () => {
       </StyledAppBar>
 
       {error && <Alert severity="error" sx={{ m: 2, flexShrink: 0 }} onClose={() => setError('')}>{error}</Alert>}
+      
+      {isProcessing && (
+        <Alert severity="info" sx={{ m: 2, flexShrink: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <CircularProgress size={20} sx={{ mr: 1 }} />
+            <Typography variant="body2">Generating meeting summary... This may take a few moments.</Typography>
+          </Box>
+        </Alert>
+      )}
 
       {/* Transcript Tab */}
       <TabPanel hidden={tabValue !== 0} value={tabValue} index={0}>
@@ -682,26 +713,25 @@ const Transcription = () => {
         </Box>
       </TabPanel>      {/* Chat Tab */}      <TabPanel hidden={tabValue !== 1} value={tabValue} index={1}>
         <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <Box sx={{ p: 2, flexGrow: 1, overflowY: 'auto', mb: 1 }}>
-            {chatMessages.length > 0 ? (
-              <Paper 
+          <Box sx={{ p: { xs: 1, sm: 2 }, flexGrow: 1, overflowY: 'auto', mb: 1 }}>
+            {chatMessages.length > 0 ? (              <Paper 
                 variant="outlined" 
                 sx={{ 
-                  p: 2, 
+                  p: { xs: 1, sm: 1.5, md: 2 }, // Responsive padding
                   background: 'linear-gradient(to bottom, #fbfbfb, #f5f5f5)',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                  borderRadius: '12px'
+                  borderRadius: { xs: '8px', sm: '12px' } // Smaller border radius on mobile
                 }}
               >
                 <List sx={{py:0}}>
-                {chatMessages.map((message) => (
-                  <ListItem
+                {chatMessages.map((message) => (                  <ListItem
                     key={message.id}
                     alignItems="flex-start"
                     sx={{
                       flexDirection: message.sender === 'user' ? 'row-reverse' : 'row',
-                      px: 0, py: 0.7, // Slightly increased padding
-                      mb: 1.5, // Increased margin between messages
+                      px: 0, 
+                      py: { xs: 0.5, sm: 0.7 }, // Responsive vertical padding
+                      mb: { xs: 1, sm: 1.5 }, // Responsive margin between messages
                       animation: 'fadeIn 0.3s ease-in-out',
                       '@keyframes fadeIn': {
                         '0%': { opacity: 0, transform: 'translateY(5px)' },
@@ -709,50 +739,51 @@ const Transcription = () => {
                       }
                     }}
                   >
-                    {/* Avatar for user or AI */}
-                    <Box
+                    {/* Avatar for user or AI */}                    <Box
                       sx={{
                         display: 'flex',
                         alignItems: 'center',
-                        mr: message.sender === 'user' ? 0 : 1.5,
-                        ml: message.sender === 'user' ? 1.5 : 0,
+                        mr: message.sender === 'user' ? 0 : { xs: 1, sm: 1.5 },
+                        ml: message.sender === 'user' ? { xs: 1, sm: 1.5 } : 0,
                         mt: 0.5
                       }}
                     >
                       {message.sender === 'user' ? (
                         <Box
                           sx={{
-                            width: 32,
-                            height: 32,
+                            width: { xs: 28, sm: 32 }, // Smaller on mobile
+                            height: { xs: 28, sm: 32 }, // Smaller on mobile
                             borderRadius: '50%',
                             backgroundColor: 'primary.light',
                             display: 'flex',
                             justifyContent: 'center',
                             alignItems: 'center',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            flexShrink: 0 // Prevent avatar from shrinking
                           }}
                         >
-                          <PersonIcon sx={{ fontSize: 18, color: 'white' }} />
+                          <PersonIcon sx={{ fontSize: { xs: 16, sm: 18 }, color: 'white' }} />
                         </Box>
                       ) : (
                         <Box
                           sx={{
-                            width: 32,
-                            height: 32,
+                            width: { xs: 28, sm: 32 }, // Smaller on mobile
+                            height: { xs: 28, sm: 32 }, // Smaller on mobile
                             borderRadius: '50%',
                             background: 'linear-gradient(135deg, #6a11cb 0%, #2575fc 100%)',
                             display: 'flex',
                             justifyContent: 'center',
                             alignItems: 'center',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                            flexShrink: 0 // Prevent avatar from shrinking
                           }}
                         >
-                          <SmartToyIcon sx={{ fontSize: 18, color: 'white' }} />
+                          <SmartToyIcon sx={{ fontSize: { xs: 16, sm: 18 }, color: 'white' }} />
                         </Box>
                       )}
                     </Box>
                     
-                    <Box sx={{                        maxWidth: '70%', // Slightly reduced max width
+                    <Box sx={{                        maxWidth: {xs: '85%', sm: '75%', md: '70%'}, // Responsive width based on screen size
                         backgroundColor: message.sender === 'user' 
                           ? 'primary.main' 
                           : (message.isError ? 'error.light' : 'rgba(255,255,255,0.95)'),
@@ -762,7 +793,7 @@ const Transcription = () => {
                         borderRadius: message.sender === 'user' 
                           ? '20px 20px 4px 20px' 
                           : '20px 20px 20px 4px', // Improved bubble style
-                        p: 1.6, // More padding for better readability
+                        p: {xs: 1.3, sm: 1.6}, // Responsive padding
                         boxShadow: message.sender === 'user'
                           ? '0 2px 8px rgba(25, 118, 210, 0.25)'
                           : '0 2px 8px rgba(0,0,0,0.06)',
@@ -778,18 +809,33 @@ const Transcription = () => {
                           transform: 'translateY(-2px)'
                         },
                         '& .list-item': {
-                          marginBottom: '0.3rem',
+                          marginBottom: '0.5rem',
                           display: 'flex',
-                          alignItems: 'flex-start'
+                          alignItems: 'flex-start',
+                          flexWrap: 'nowrap'
                         },
                         '& .list-number': {
                           minWidth: '1.5rem',
-                          fontWeight: 500
+                          fontWeight: 500,
+                          flexShrink: 0
+                        },
+                        '& .list-bullet': {
+                          minWidth: '1.2rem',
+                          marginRight: '0.3rem',
+                          flexShrink: 0
+                        },
+                        '& .list-content': {
+                          flexGrow: 1,
+                          wordBreak: 'break-word'
                         }
                       }}
                     >                      {/* User messages don't need formatting, AI messages do */}
-                      {message.sender === 'user' ? (
-                        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6 }}>
+                      {message.sender === 'user' ? (                        <Typography variant="body2" sx={{ 
+                            whiteSpace: 'pre-wrap', 
+                            wordBreak: 'break-word', 
+                            lineHeight: 1.6,
+                            fontSize: { xs: '0.875rem', sm: '0.875rem', md: '1rem' } // Responsive font size
+                          }}>
                           {message.text}
                         </Typography>
                       ) : (
@@ -798,28 +844,33 @@ const Transcription = () => {
                             whiteSpace: 'pre-wrap', 
                             wordBreak: 'break-word', 
                             lineHeight: 1.6,
+                            fontSize: { xs: '0.875rem', sm: '0.875rem', md: '1rem' }, // Responsive font size
                             '& strong': { fontWeight: 600 },
                             '& em': { fontStyle: 'italic' },
                             '& code': { 
                               fontFamily: 'monospace',
                               backgroundColor: 'rgba(0,0,0,0.05)',
                               padding: '0.1rem 0.3rem',
-                              borderRadius: '3px'
+                              borderRadius: '3px',
+                              fontSize: { xs: '0.8125rem', sm: '0.8125rem', md: '0.875rem' }, // Smaller code font on mobile
+                              wordBreak: 'break-word'
                             },
                             '& pre': { 
                               overflowX: 'auto', 
                               maxWidth: '100%',
                               backgroundColor: 'rgba(0,0,0,0.04)',
-                              padding: '0.5rem',
+                              padding: { xs: '0.3rem', sm: '0.5rem' }, // Responsive padding
                               borderRadius: '4px',
-                              margin: '0.5rem 0'
+                              margin: '0.5rem 0',
+                              fontSize: { xs: '0.8125rem', sm: '0.8125rem', md: '0.875rem' }, // Smaller code font on mobile
+                              whiteSpace: 'pre-wrap' // Allow wrapping in code blocks
                             },
-                            '& ul': { paddingLeft: '1.5rem', marginTop: '0.5rem', marginBottom: '0.5rem' },
+                            '& ul': { paddingLeft: { xs: '1rem', sm: '1.5rem' }, marginTop: '0.5rem', marginBottom: '0.5rem' },
                             '& li': { marginBottom: '0.25rem' }
                           }}
-                          dangerouslySetInnerHTML={{ __html: cleanMarkdownFormatting(message.text) }}
-                        />
-                      )}                      {/* Streaming indicator - removed */}
+                          dangerouslySetInnerHTML={{ __html: cleanMarkdownFormatting(message.text) }}                        />
+                      )}
+                      {/* Streaming indicator - removed */}
                       {message.sender === 'ai' && message.isStreaming && (
                         <Box component="span" sx={{ 
                           display: 'inline-flex', 
@@ -1083,8 +1134,7 @@ const Transcription = () => {
         </Box>
       </TabPanel>
 
-      {/* Summary Tab */}
-      <TabPanel hidden={tabValue !== 2} value={tabValue} index={2}>
+      {/* Summary Tab */}      <TabPanel hidden={tabValue !== 2} value={tabValue} index={2}>
         {summary ? (
          <Box>
             <Card sx={{ mb: 3, boxShadow: 3 }}>
@@ -1104,6 +1154,22 @@ const Transcription = () => {
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}> <SummarizeIcon color="action" sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} /> <Typography variant="h6" color="textSecondary" align="center">No summary available yet.</Typography> <Button variant="contained" color="primary" onClick={generateSummary} disabled={!rawTranscript || isProcessing} sx={{ mt: 2 }}>Generate Summary</Button> </Box>
         )}
       </TabPanel>
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={5000}
+        onClose={handleSnackbarClose}
+        message={snackbarMessage}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{
+          '& .MuiSnackbarContent-root': {
+            bgcolor: 'success.main',
+            minWidth: '250px',
+            fontWeight: 500
+          }
+        }}
+      />
     </Box>
   );
 };
