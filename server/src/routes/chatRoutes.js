@@ -6,105 +6,198 @@ const { initializeGemini } = require('../config/gemini.config'); // Adjust path 
 
 // Helper function to transform client chat history to Gemini format
 const transformHistoryToGeminiFormat = (clientHistory) => {
-  if (!clientHistory || !Array.isArray(clientHistory)) {
-    return [];
-  }
-  return clientHistory.map(msg => ({
-    role: msg.sender === 'user' ? 'user' : 'model', // Assuming 'ai' sender maps to 'model'
-    parts: [{ text: msg.text || "" }]
-  }));
+    if (!clientHistory || !Array.isArray(clientHistory)) {
+        console.log("[Chat] No client history or invalid format provided.");
+        return [];
+    }
+
+    // Filter out any invalid messages and transform
+    return clientHistory
+        .filter(msg =>
+            msg && typeof msg === 'object' &&
+            (msg.sender === 'user' || msg.sender === 'ai') && // Assuming 'ai' from client maps to 'model'
+            msg.text && typeof msg.text === 'string'
+        )
+        .map(msg => ({
+            role: msg.sender === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.text }]
+        }));
 };
 
 router.post('/', authMiddleware, async (req, res) => {
-  const { fullTranscript, clientSideChatHistory, newUserQuery } = req.body;
-  const userId = req.user.uid; // From authMiddleware
+    const { fullTranscript, clientSideChatHistory, newUserQuery } = req.body;
+    const userId = req.user.uid;
 
-  if (!newUserQuery || typeof newUserQuery !== 'string') {
-    return res.status(400).json({ error: 'newUserQuery is required and must be a string.' });
-  }
-  if (typeof fullTranscript !== 'string') {
-    // Allow empty transcript, but it must be a string
-    return res.status(400).json({ error: 'fullTranscript must be a string.' });
-  }
-
-  let geminiPro; // Or geminiFlash, depending on your config and preference for chat
-  try {
-    const geminiConfig = initializeGemini();
-    geminiPro = geminiConfig.geminiPro; // Assuming you have a geminiPro model configured
-    if (!geminiPro) {
-        console.error(`[POST /api/chat] Gemini Pro model not available. Falling back to Flash if configured, or erroring.`);
-        geminiPro = geminiConfig.geminiFlash; // Fallback or specific chat model
+    if (!newUserQuery || typeof newUserQuery.trim() === '') {
+        return res.status(400).json({ error: 'A non-empty query is required.' });
     }
-    if (!geminiPro) {
-        throw new Error('Appropriate Gemini model for chat is not configured or available.');
-    }
-  } catch (initError) {
-    console.error('[POST /api/chat] CRITICAL: Failed to initialize Gemini:', initError);
-    return res.status(500).json({ error: 'Failed to initialize AI service.' });
-  }
 
-  try {
+    const transcript = fullTranscript || ""; // Allow empty or undefined transcript
+
     console.log(`[POST /api/chat] User: ${userId}, Query: "${newUserQuery.substring(0, 50)}..."`);
+    console.log(`[POST /api/chat] Transcript Length: ${transcript.length}, History Entries: ${clientSideChatHistory?.length || 0}`);
 
-    // 1. Construct initial prompts for Gemini
-    const systemInstruction = `You are a helpful and concise meeting assistant. The user is providing you with a meeting transcript and will ask questions about it.
-    Strictly base your answers on the provided transcript. If the answer cannot be found in the transcript, clearly state that.
-    Do not make up information or answer questions outside the scope of this meeting transcript.
+    let geminiChatModel;    try {
+        const geminiConfig = initializeGemini();
+        // Always prefer geminiChat which is specifically set to gemini-2.0-flash in the config
+        geminiChatModel = geminiConfig.geminiChat || geminiConfig.geminiPro;
+        
+        // Import the model verifier
+        const { verifyModel, isRateLimitError } = require('../utils/modelVerifier');
+        const { createApiError, ErrorCodes } = require('../utils/error.utils');
+        
+        // Verify we have the correct model
+        if (!geminiChatModel) {
+            console.error('[POST /api/chat] Gemini chat model is not initialized.');
+            throw new Error('AI service model is not available.');
+        }
+        
+        // Check the model being used
+        const modelInfo = verifyModel(geminiChatModel);
+        if (!modelInfo.isCorrect) {
+            console.warn(`[POST /api/chat] Warning: Using non-preferred model: ${modelInfo.name} (should be gemini-2.0-flash)`);
+            // Continue anyway, but log the warning
+        } else {
+            console.log(`[POST /api/chat] Using correct model: ${modelInfo.name}`);
+        }
+        
+        if (typeof geminiChatModel.startChat !== 'function') {
+            console.error('[POST /api/chat] Gemini chat model lacks startChat method.');
+            throw new Error('AI service model is misconfigured.');
+        }
+        
+        console.log('[POST /api/chat] Gemini chat model loaded successfully.');
+    } catch (initError) {
+        console.error('[POST /api/chat] CRITICAL: Failed to initialize Gemini:', initError.message);
+        return res.status(500).json(createApiError(
+            'Failed to initialize AI service.', 
+            ErrorCodes.MODEL_ERROR, 
+            { details: initError.message }
+        ));
+    }    try {
+        const systemInstruction = `You are a helpful AI assistant for the TwinMind application.
+Analyze the provided meeting transcript to answer questions.
+If the transcript is short or information is missing, state that.
+Be conversational and stick to the transcript content.
+DO NOT use markdown formatting like asterisks (*) or formatting symbols in your response.
+Use plain text only without any special formatting.
 
-    MEETING TRANSCRIPT:
-    ---
-    ${fullTranscript || "(No transcript provided for this session yet)"}
-    ---
-    `;
+MEETING TRANSCRIPT:
+---
+${transcript}
+---
+`;
 
-    const initialPrompts = [
-      { role: "user", parts: [{ text: systemInstruction }] },
-      { role: "model", parts: [{ text: "Okay, I have the meeting transcript context. How can I assist you with it?" }] }
-    ];
+        const initialPrompts = [
+            { role: "user", parts: [{ text: systemInstruction }] },
+            { role: "model", parts: [{ text: "Okay, I have the meeting transcript. How can I help you with it?" }] }
+        ];
 
-    // 2. Transform client-side chat history and combine
-    const transformedHistory = transformHistoryToGeminiFormat(clientSideChatHistory);
-    const fullGeminiHistory = [...initialPrompts, ...transformedHistory];
+        const transformedHistory = transformHistoryToGeminiFormat(clientSideChatHistory);
+        const fullGeminiHistory = [...initialPrompts, ...transformedHistory];
 
-    // 3. Start chat session
-    const chat = geminiPro.startChat({
-      history: fullGeminiHistory,
-      // generationConfig: { /* Optional: Add temperature, topK, etc. */ }
-    });
+        const chat = geminiChatModel.startChat({
+            history: fullGeminiHistory,
+            generationConfig: {
+                temperature: 0.7,
+                topP: 0.9,
+                maxOutputTokens: 1024
+            }
+        });
 
-    // 4. Send user's new query and stream the response
-    const result = await chat.sendMessageStream(newUserQuery);
+        console.log('[POST /api/chat] Sending query to Gemini and starting stream...');
+        const result = await chat.sendMessageStream(newUserQuery);
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders(); // Flush the headers to establish the connection
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders(); // Establish SSE connection
 
-    let accumulatedText = ""; // For logging purposes on the backend
-    for await (const chunk of result.stream) {
-      const textPart = chunk.text();
-      if (textPart) {
-        accumulatedText += textPart;
-        res.write(`data: ${JSON.stringify({ textChunk: textPart })}\n\n`);
-      }
+        let accumulatedText = "";
+        for await (const chunk of result.stream) {
+            const textPart = chunk.text();
+            if (textPart) {
+                accumulatedText += textPart;
+                res.write(`data: ${JSON.stringify({ textChunk: textPart })}\n\n`);
+            }
+        }
+        console.log(`[POST /api/chat] Stream finished. Total response length: ${accumulatedText.length}`);
+          // Send end of stream marker with all necessary flags
+        res.write(`data: ${JSON.stringify({ 
+          done: true, 
+          endOfStream: true,
+          completed: true 
+        })}\n\n`);
+        res.end();    } catch (error) {
+        console.error('[POST /api/chat] Error during chat processing:', error.message);
+        // Add more detailed error logging if in development
+        if (process.env.NODE_ENV === 'development') {
+            console.error('[POST /api/chat] Full error object:', error);
+        }
+        
+        // Import error utilities if not already imported
+        const { isRateLimitError } = require('../utils/modelVerifier');
+        const { formatUserFriendlyError, ErrorCodes } = require('../utils/error.utils');
+        
+        if (res.headersSent) {
+            try {
+                // Create appropriate error code
+                let errorCode = ErrorCodes.UNKNOWN;
+                
+                // Check for specific error types
+                if (isRateLimitError(error)) {
+                    errorCode = ErrorCodes.RATE_LIMITED;
+                } else if (error.message && error.message.includes('API key not valid')) {
+                    errorCode = ErrorCodes.AUTH_ERROR;
+                } else if (error.status === 500 || error.code === 'SERVER_ERROR' || 
+                          error.message && error.message.includes('server')) {
+                    errorCode = ErrorCodes.SERVER_ERROR;
+                } else if (error.message && (
+                    error.message.includes('model') || 
+                    error.message.includes('gemini')
+                )) {
+                    errorCode = ErrorCodes.MODEL_ERROR;
+                }
+                
+                // Get user-friendly message
+                const userFriendlyMessage = formatUserFriendlyError({
+                    ...error,
+                    code: errorCode
+                });
+
+                res.write(`data: ${JSON.stringify({
+                    error: true,
+                    errorMessage: userFriendlyMessage,
+                    errorCode: errorCode,
+                    friendlyMessage: userFriendlyMessage,
+                    endOfStream: true
+                })}\n\n`);
+            } catch (writeError) {
+                console.error('[POST /api/chat] Fatal: Could not write error to an already open stream:', writeError.message);
+            } finally {
+                res.end();
+            }
+        } else {
+            // If headers haven't been sent, send a standard JSON error response
+            let statusCode = 500;
+            let errorMessage = 'Failed to process chat message.';
+            
+            // Determine appropriate status code
+            if (isRateLimitError(error)) {
+                statusCode = 429; // Too Many Requests
+                errorMessage = 'Rate limit reached. Please try again in 30-60 seconds.';
+            }
+            
+            const userFriendlyMessage = formatUserFriendlyError(error);
+            
+            res.status(statusCode).json({
+                error: errorMessage,
+                details: error.message || 'Unknown error',
+                code: error.code || ErrorCodes.UNKNOWN,
+                friendlyMessage: userFriendlyMessage
+            });
+        }
     }
-    console.log(`[POST /api/chat] Gemini Response (last 50 chars): "...${accumulatedText.slice(-50)}"`);
-
-    res.write(`data: ${JSON.stringify({ endOfStream: true })}\n\n`);
-    res.end();
-
-  } catch (error) {
-    console.error('[POST /api/chat] Error during chat processing:', error);
-    // If headers already sent, we can't send a JSON error.
-    // The client-side will need to handle abrupt stream termination.
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Failed to process chat message.', details: error.message });
-    } else {
-      // Try to send an error event in the stream if possible, though might not be processed by client
-      res.write(`data: ${JSON.stringify({ error: 'Stream failed', details: error.message })}\n\n`);
-      res.end();
-    }
-  }
 });
 
 module.exports = router;

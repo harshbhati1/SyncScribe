@@ -38,6 +38,13 @@ const initializeFirebase = () => {
   }
 };
 
+// Initialize Firebase immediately
+try {
+  initializeFirebase();
+} catch (error) {
+  console.error('Failed to initialize Firebase on load:', error);
+}
+
 module.exports = {
   serviceAccountCredentials,
   initializeFirebase,

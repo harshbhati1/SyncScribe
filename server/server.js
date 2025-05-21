@@ -107,7 +107,7 @@ app.use((err, req, res, next) => {
 // Import routes
 const authRoutes = require('./src/routes/auth.routes');
 const transcriptionRoutes = require('./src/routes/transcription.routes');
-const chatRoutes = require('./routes/chatRoutes'); 
+const chatRoutes = require('./src/routes/chatRoutes'); // Correct import, no .js extension needed
 
 // Route middleware
 app.use('/api/auth', authRoutes);

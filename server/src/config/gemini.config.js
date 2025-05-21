@@ -65,13 +65,23 @@ const initializeGemini = () => {
     // Validate model availability (without using await since we're in a sync function)
     console.log(`[GeminiConfig] Gemini model instance created. (No validation performed in sync function)`);
     
-    // We'll do a simple ping test in the transcription routes before first use
-    // --- END MODIFICATION ---
+    // We'll do a simple ping test in the transcription routes before first use    // --- END MODIFICATION ---    // Initialize a model for chat support (always using gemini-2.0-flash)
+    const geminiChatModel = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash', // Always use flash model for chat capabilities
+      generationConfig: {
+        temperature: 0.7, // Higher temperature for more creative chat responses
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 1024,
+      }
+    });
     
-    console.log(`[GeminiConfig] ✅ Gemini client and model ('${modelName}') initialized successfully. Real API mode enabled.`);
+    console.log(`[GeminiConfig] ✅ Gemini client and models ('${modelName}' for ASR, 'gemini-2.0-flash' for chat) initialized successfully. Real API mode enabled.`);
     const newInstance = {
       genAI,
       geminiFlash: geminiFlashModel,
+      geminiPro: geminiChatModel, // Keep backward compatible name but use the flash model
+      geminiChat: geminiChatModel, // Adding a more clearly named property for new code to use
       isSimulationMode: false
     };
     if (FORCE_REINIT_GEMINI_FOR_DEBUG) return newInstance;
@@ -84,10 +94,10 @@ const initializeGemini = () => {
         console.error('[GeminiConfig] Full initialization error:', error);
     }
     console.warn('[GeminiConfig] Gemini API initialization failed. Falling back to simulation mode.');
-    
-    const errorInstance = {
+      const errorInstance = {
       genAI: null,
       geminiFlash: null,
+      geminiPro: null,
       isSimulationMode: true
     };
     if (FORCE_REINIT_GEMINI_FOR_DEBUG) return errorInstance;

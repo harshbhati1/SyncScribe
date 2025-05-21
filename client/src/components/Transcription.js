@@ -28,11 +28,13 @@ import SaveIcon from '@mui/icons-material/Save';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ChatIcon from '@mui/icons-material/Chat';
-import SendIcon from '@mui/icons-material/Send';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ArticleIcon from '@mui/icons-material/Article';
 import SummarizeIcon from '@mui/icons-material/Summarize';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
+import PersonIcon from '@mui/icons-material/Person';
 import InsightsIcon from '@mui/icons-material/Insights';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import SendIcon from '@mui/icons-material/Send';
 import apiRequest, { transcriptionAPI } from '../services/api';
 import MeetingRecorder from './MeetingRecorder';
 
@@ -91,11 +93,10 @@ const Transcription = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   const { meetingId } = useParams();
-
   // --- State Variables ---
   const [isRecordingLocal, setIsRecordingLocal] = useState(false); // For local MediaRecorder controls if used
   const [rawTranscript, setRawTranscript] = useState(''); // For immediate, complete transcript for logic
-  const [animatedDisplayedTranscript, setAnimatedDisplayedTranscript] = useState(''); // For UI with animation
+  const [animatedDisplayedTranscript, setAnimatedDisplayedTranscript] = useState(''); // Renamed but now just holds the transcript directly
   const [transcriptionSegments, setTranscriptionSegments] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false); // General processing for save/summary
   const [error, setError] = useState('');
@@ -107,8 +108,8 @@ const Transcription = () => {
   const [chatMessages, setChatMessages] = useState([]);
   const [summary, setSummary] = useState(null);
   const [audioLevelsLocal, setAudioLevelsLocal] = useState(Array(9).fill({ level: 3, isSilent: true })); // For local recorder viz
-
   const [isAiResponding, setIsAiResponding] = useState(false); // For chat AI response streaming
+  const [hasAutoSwitchedToChat, setHasAutoSwitchedToChat] = useState(false); // Track if we've already auto-switched to chat
   const currentAiMessageIdRef = useRef(null); // To manage the ID of the AI message being built during streaming
 
   // --- Refs ---
@@ -118,13 +119,6 @@ const Transcription = () => {
   const recordingTimeRefLocal = useRef(0);
   const [recordingTimeLocal, setRecordingTimeLocal] = useState(0);
   const chatEndRef = useRef(null); // For scrolling chat to bottom
-
-  // --- Animation Refs for main transcript---
-  const animationQueueRef = useRef([]);
-  const currentChunkToAnimateRef = useRef("");
-  const currentCharIndexRef = useRef(0);
-  const animationTimerIdRef = useRef(null);
-  const typingSpeedMs = 30; // Milliseconds per character for main transcript animation
 
   // Handle tab change
   const handleTabChange = (event, newValue) => setTabValue(newValue);
@@ -181,65 +175,22 @@ const Transcription = () => {
     }
     setEditingTitle(false);
   };
-
-  // --- Animation Core Logic for Main Transcript ---
-  const processAnimationQueue = useCallback(() => {
-    if (animationTimerIdRef.current) {
-      clearTimeout(animationTimerIdRef.current);
-      animationTimerIdRef.current = null;
+  // Simplified transcript update logic (no animation)
+  const processTranscriptUpdate = useCallback((text) => {
+    if (text && typeof text === 'string') {
+      setAnimatedDisplayedTranscript(text);
     }
-    if (currentCharIndexRef.current < currentChunkToAnimateRef.current.length) {
-      const charToAppend = currentChunkToAnimateRef.current[currentCharIndexRef.current];
-      setAnimatedDisplayedTranscript(prev => prev + charToAppend);
-      currentCharIndexRef.current++;
-      animationTimerIdRef.current = setTimeout(processAnimationQueue, typingSpeedMs);
-    } else {
-      if (animationQueueRef.current.length > 0) {
-        const nextRawChunk = animationQueueRef.current.shift();
-        setAnimatedDisplayedTranscript(prevDisplayTranscript => { // Using callback to get latest prevDisplayTranscript for spacing
-          let chunkToAnimateWithSpace = nextRawChunk;
-          if (prevDisplayTranscript.length > 0 &&
-              !prevDisplayTranscript.endsWith(' ') &&
-              nextRawChunk && !nextRawChunk.startsWith(' ')) {
-            chunkToAnimateWithSpace = " " + nextRawChunk;
-          } else if (prevDisplayTranscript.length > 0 &&
-                     prevDisplayTranscript.endsWith(' ') &&
-                     nextRawChunk && nextRawChunk.startsWith(' ')) {
-            chunkToAnimateWithSpace = nextRawChunk.substring(1);
-          } else if (prevDisplayTranscript.length === 0 &&
-                     nextRawChunk && nextRawChunk.startsWith(' ')) {
-            chunkToAnimateWithSpace = nextRawChunk.substring(1);
-          }
-          currentChunkToAnimateRef.current = chunkToAnimateWithSpace || "";
-          currentCharIndexRef.current = 0;
-          if (currentChunkToAnimateRef.current.length > 0) {
-            animationTimerIdRef.current = setTimeout(processAnimationQueue, typingSpeedMs);
-          } else {
-            Promise.resolve().then(processAnimationQueue); // Process next in queue if current chunk became empty
-          }
-          return prevDisplayTranscript; // This set state is mainly to ensure the callback has fresh prev state
-        });
-      } else {
-        currentChunkToAnimateRef.current = "";
-        animationTimerIdRef.current = null; // Animation idle
-      }
-    }
-  }, [typingSpeedMs]); // typingSpeedMs is stable
-
-  // --- Callback for MeetingRecorder component (updates main transcript) ---
+  }, []);  // --- Callback for MeetingRecorder component (updates main transcript) - no animation ---
   const handleMeetingRecorderUpdate = useCallback((textChunk, metadata) => {
     if (metadata && metadata.type === 'reset') {
       setRawTranscript("");
       setAnimatedDisplayedTranscript("");
       setTranscriptionSegments([]);
-      animationQueueRef.current = [];
-      if (animationTimerIdRef.current) clearTimeout(animationTimerIdRef.current);
-      animationTimerIdRef.current = null;
-      currentChunkToAnimateRef.current = '';
-      currentCharIndexRef.current = 0;
+      setHasAutoSwitchedToChat(false); // Reset the auto-switch flag when transcript is reset
       setError('');
       return;
     }
+    
     let chunkToProcess = textChunk;
     if (metadata && metadata.error) {
       chunkToProcess = `[Error: ${textChunk || (metadata.errorDetail || 'Transcription failed')}]`;
@@ -262,18 +213,17 @@ const Transcription = () => {
           } else {
             newRaw += chunkToProcess;
           }
+          // Update displayed transcript immediately
+          setAnimatedDisplayedTranscript(newRaw);
           return newRaw;
         });
-        animationQueueRef.current.push(chunkToProcess); // Add to animation queue
-        if (!animationTimerIdRef.current && !currentChunkToAnimateRef.current) { // If animation is idle, start it
-          processAnimationQueue();
-        }
       }
     }
+    
     if (metadata) {
       setTranscriptionSegments(prev => [...prev, { ...metadata, text: chunkToProcess || "" }]);
     }
-  }, [processAnimationQueue]); // processAnimationQueue is stable due to useCallback
+  }, []);// processAnimationQueue is stable due to useCallback
 
   // --- Local MediaRecorder Logic (If you intend to use it alongside MeetingRecorder) ---
   // Ensure this logic is distinct or integrated if MeetingRecorder is the primary.
@@ -304,15 +254,12 @@ const Transcription = () => {
     } catch (err) { console.error('Error processing local audio chunk:', err); }
   };
   const stopRecordingLocal = async () => { /* ... your original implementation ... */ await processAudioChunkLocal(); };
-
-  // Cleanup for animation and local recording interval
+  // Cleanup for local recording interval
   useEffect(() => {
-    const animationTimer = animationTimerIdRef.current;
     const intervalTimer = recordingIntervalRefLocal.current;
     const mediaRecorder = mediaRecorderRefLocal.current;
 
     return () => {
-      if (animationTimer) clearTimeout(animationTimer);
       if (intervalTimer) clearInterval(intervalTimer);
       if (mediaRecorder && mediaRecorder.stream) {
         mediaRecorder.stream.getTracks().forEach(track => track.stop());
@@ -345,86 +292,185 @@ const Transcription = () => {
         setIsProcessing(false);
     }
   };
-
   // --- CHAT SUBMIT HANDLER ---
   const handleChatSubmit = async (e) => {
-    e.preventDefault();
+    e?.preventDefault();
     if (!chatQuery.trim() || isAiResponding) return;
 
-    const currentTextQuery = chatQuery;
-    const historyToSend = chatMessages.map(msg => ({ // Transform to { sender, text } if backend expects that
+    const currentTextQuery = chatQuery.trim();
+    
+    // Create a sanitized history to send to backend
+    const historyToSend = chatMessages.map(msg => ({
         sender: msg.sender,
         text: msg.text
-    })); // Send a snapshot of history
-
+    }));    // Add user message to chat history
     const userMessage = {
       id: `user-${Date.now()}`,
       text: currentTextQuery,
       sender: 'user'
     };
+    
+    // Update UI immediately
     setChatMessages(prevMessages => [...prevMessages, userMessage]);
-    setChatQuery('');
+    setChatQuery(''); // Clear input field
     setIsAiResponding(true);
+    
+    // Generate ID for AI response
     currentAiMessageIdRef.current = `ai-${Date.now()}`;
-
+    
+    // Add placeholder for AI response
     setChatMessages(prevMessages => [
       ...prevMessages,
-      { id: currentAiMessageIdRef.current, text: "", sender: 'ai', isStreaming: true }
+      { 
+        id: currentAiMessageIdRef.current, 
+        text: "", 
+        sender: 'ai', 
+        isStreaming: true
+      }
     ]);
 
-    try {
+    // Switch to chat tab if not already there
+    if (tabValue !== 1) {
+      setTabValue(1);
+    }    try {
+      console.log("Sending chat request with transcript length:", rawTranscript?.length || 0);
+      
+      // Check if transcript is too short
+      if (!rawTranscript || rawTranscript.length < 30) {
+        console.warn("Transcript is very short or empty, adding a note to the chat history");
+        // Add a note message before sending the request
+        setChatMessages(prevMessages => [
+          ...prevMessages.filter(msg => msg.id !== currentAiMessageIdRef.current),          { 
+            id: currentAiMessageIdRef.current, 
+            text: "Note: The transcript appears to be very short or empty. I'll do my best to answer, but might be limited in what I can reference.", 
+            sender: 'ai', 
+            isStreaming: false
+          }
+        ]);
+        
+        // Allow a small delay for the user to see the message
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        // Create a new message ID for the actual answer
+        currentAiMessageIdRef.current = `ai-${Date.now()}`;
+        setChatMessages(prevMessages => [
+          ...prevMessages,          { 
+            id: currentAiMessageIdRef.current, 
+            text: "", 
+            sender: 'ai', 
+            isStreaming: true
+          }
+        ]);
+      }
+      
       await transcriptionAPI.chatWithTranscript(
-        rawTranscript,
-        historyToSend, // Pass the captured history
-        currentTextQuery,
-        {
-          onChunk: (textChunk) => {
+        rawTranscript,  // The full transcript text
+        historyToSend,  // Previous chat messages
+        currentTextQuery, // Current user query
+        {          onChunk: (textChunk) => {
+            // Clean the markdown formatting from the text chunk
+            const cleanedChunk = textChunk
+              .replace(/\*\*/g, '') // Remove bold markers
+              .replace(/\*/g, '');  // Remove italic markers
+              
+            // Update the streaming message with each chunk
             setChatMessages(prevMessages =>
               prevMessages.map(msg =>
                 msg.id === currentAiMessageIdRef.current
-                  ? { ...msg, text: (msg.text || "") + textChunk }
+                  ? { ...msg, text: (msg.text || "") + cleanedChunk }
                   : msg
               )
             );
-          },
-          onEnd: () => {
-            setChatMessages(prevMessages =>
-              prevMessages.map(msg =>
+          },          onEnd: () => {
+            // Mark message as complete when stream ends
+            setChatMessages(prevMessages => {
+              const currentMessage = prevMessages.find(msg => msg.id === currentAiMessageIdRef.current);
+              
+              return prevMessages.map(msg =>
                 msg.id === currentAiMessageIdRef.current
-                  ? { ...msg, isStreaming: false }
+                  ? { 
+                      ...msg, 
+                      isStreaming: false,
+                      text: currentMessage ? cleanMarkdownFormatting(currentMessage.text) : msg.text 
+                    }
                   : msg
-              )
-            );
+              );
+            });
+            
             setIsAiResponding(false);
             currentAiMessageIdRef.current = null;
-          },
-          onError: (error) => {
+          },onError: (error) => {
             console.error("Chat stream error:", error);
-            setChatMessages(prevMessages =>
-              prevMessages.map(msg =>
-                msg.id === currentAiMessageIdRef.current
-                  ? { ...msg, text: (msg.text || "") + `\n[Error: ${error.message || 'Could not get response'}]`, isStreaming: false, isError: true }
-                  : msg
-              )
-            );
-            setIsAiResponding(false);
+            const errorMessage = error.message || 'Unknown error';
+              // Format error message based on type
+            let formattedErrorMsg = error.friendlyMessage || error.message || 'Unknown error';
+            
+            if (error.code === 'RATE_LIMITED' || formattedErrorMsg.includes('rate limit') || formattedErrorMsg.includes('429')) {
+              formattedErrorMsg = "😓 Rate limit reached. I need to take a short break. Please try again in 30-60 seconds.";
+            } else if (error.code === 'SERVER_ERROR' || formattedErrorMsg.includes('Server error') || formattedErrorMsg.includes('500')) {
+              formattedErrorMsg = "😓 Sorry, I'm having trouble connecting to the server. This might be due to a temporary issue. Please try again in a moment.";
+            }
+            
+            // Update the message with error information
+            setChatMessages(prevMessages => {
+              // Find the specific message that needs updating
+              const messageToUpdate = prevMessages.find(msg => msg.id === currentAiMessageIdRef.current);
+              
+              // If the message exists and already has substantial content
+              if (messageToUpdate && messageToUpdate.text && messageToUpdate.text.length > 20) {
+                // Keep existing content but add error notice
+                return prevMessages.map(msg =>
+                  msg.id === currentAiMessageIdRef.current
+                    ? { 
+                        ...msg, 
+                        text: `${msg.text}\n\n[Error: Communication was interrupted. ${formattedErrorMsg}]`, 
+                        isStreaming: false, 
+                        isError: true 
+                      }
+                    : msg
+                );
+              } else {
+                // Replace with just the error message if there's no substantial content
+                return prevMessages.map(msg =>
+                  msg.id === currentAiMessageIdRef.current                    ? { 
+                        ...msg, 
+                        text: cleanMarkdownFormatting(formattedErrorMsg), 
+                        isStreaming: false, 
+                        isError: true 
+                      }
+                    : msg
+                );
+              }
+            });setIsAiResponding(false);
             currentAiMessageIdRef.current = null;
-            setError(`Chat error: ${error.message || 'Failed to get response'}`);
+            // Only set the global error for major failures, not just stream interruptions
+            setChatMessages(prevMsgs => {
+              const currentMessage = prevMsgs.find(msg => msg.id === currentAiMessageIdRef.current);
+              if (!currentMessage?.text || currentMessage.text.length < 5) {
+                setError(`Chat error: ${error.message || 'Failed to get response'}`);
+              }
+              return prevMsgs;
+            });
           }
         }
       );
-    } catch (apiSetupError) {
-      console.error("Error setting up chat stream:", apiSetupError);
-      setChatMessages(prevMessages =>
-          prevMessages.map(msg =>
+    } catch (apiSetupError) {      console.error("Error setting up chat stream:", apiSetupError);
+      // Handle error in API setup
+      setChatMessages(prevMsgs =>
+          prevMsgs.map(msg =>
               msg.id === currentAiMessageIdRef.current
-              ? { ...msg, text: `[Error: ${apiSetupError.message || 'Failed to initiate chat'}]`, isStreaming: false, isError: true }
+              ? { 
+                  ...msg, 
+                  text: `I'm sorry, I couldn't process your request: ${apiSetupError.message || 'Failed to connect to chat service'}. Please try again in a moment.`, 
+                  isStreaming: false, 
+                  isError: true 
+                }
               : msg
-          ).filter(msg => !(msg.id === currentAiMessageIdRef.current && msg.text === "" && msg.isError))
+          )
       );
       setIsAiResponding(false);
       currentAiMessageIdRef.current = null;
-      setError(`Chat setup error: ${apiSetupError.message || 'Failed to initiate chat'}`);
+      setError(`Chat error: ${apiSetupError.message || 'Failed to initiate chat'}`);
     }
   };
 
@@ -458,13 +504,13 @@ const Transcription = () => {
       setError(''); // Clear any global errors
     }
   };
-
   // Load existing meeting data
   useEffect(() => {
     const loadMeetingData = async () => {
       if (meetingId) {
         setIsProcessing(true);
         setError(''); // Clear previous errors
+        setHasAutoSwitchedToChat(false); // Reset flag when loading a new meeting
         try {
           const response = await transcriptionAPI.getMeeting(meetingId); // Assumes api.js has this
           if (response && response.data && response.status === 200) {
@@ -510,6 +556,39 @@ const Transcription = () => {
     loadMeetingData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId]); // Rerun if meetingId changes
+  // Automatically switch to chat tab when transcript becomes available
+  useEffect(() => {
+    // If we have a transcript and no chat messages yet, show the chat tab with suggestions
+    if (
+      rawTranscript && 
+      rawTranscript.length > 50 && 
+      chatMessages.length === 0 && 
+      tabValue !== 1 && 
+      !hasAutoSwitchedToChat // Only auto-switch if we haven't done it yet for this context
+    ) {
+      // Use slight delay to ensure the transcript is fully processed
+      const timer = setTimeout(() => {
+        setTabValue(1);
+        setHasAutoSwitchedToChat(true); // Mark that we've auto-switched for this context
+        console.log("[Transcription] Auto-switching to chat tab due to new transcript");
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [rawTranscript, chatMessages.length, tabValue, hasAutoSwitchedToChat]);
+  // Format text by removing markdown symbols  
+  const cleanMarkdownFormatting = (text) => {
+    if (!text) return '';
+    
+    // Remove asterisks and other markdown formatting
+    return text
+      .replace(/\*\*(.*?)\*\*/g, '$1') // Bold (**text**)
+      .replace(/\*(.*?)\*/g, '$1')     // Italic (*text*)
+      .replace(/^\s*[*•-]\s+/gm, '• ') // Bullet points to a standard bullet
+      .replace(/\n\s*\n/g, '\n\n')     // Preserve paragraph breaks
+      .replace(/^#+\s+(.+)$/gm, '$1')  // Remove heading markers
+      .replace(/`{1,3}(.*?)`{1,3}/g, '$1') // Remove code/inline code formatting
+      .replace(/_{1,2}(.*?)_{1,2}/g, '$1'); // Remove underscores for emphasis
+  };
 
   return (
     <Box sx={{ flexGrow: 1, height: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -588,68 +667,367 @@ const Transcription = () => {
             </>
           ) : ( <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'calc(100% - 40px)' /* Adjust if MeetingRecorder has fixed height */ }}> <ArticleIcon color="action" sx={{fontSize: 48, mb:2, opacity: 0.5}}/> <Typography variant="h6" color="textSecondary" align="center"> Start recording to get started. </Typography><Typography variant="body2" color="textSecondary" align="center">Your live transcript will appear here.</Typography> </Box> )}
         </Box>
-      </TabPanel>
-
-      {/* Chat Tab */}
-      <TabPanel hidden={tabValue !== 1} value={tabValue} index={1}>
+      </TabPanel>      {/* Chat Tab */}      <TabPanel hidden={tabValue !== 1} value={tabValue} index={1}>
         <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <Paper variant="outlined" sx={{ p: 2, flexGrow: 1, overflowY: 'auto', mb: 1, backgroundColor: 'background.default' }}>
+          <Box sx={{ p: 2, flexGrow: 1, overflowY: 'auto', mb: 1 }}>
             {chatMessages.length > 0 ? (
-              <List sx={{py:0}}>
+              <Paper 
+                variant="outlined" 
+                sx={{ 
+                  p: 2, 
+                  background: 'linear-gradient(to bottom, #fbfbfb, #f5f5f5)',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                  borderRadius: '12px'
+                }}
+              >
+                <List sx={{py:0}}>
                 {chatMessages.map((message) => (
                   <ListItem
                     key={message.id}
                     alignItems="flex-start"
                     sx={{
                       flexDirection: message.sender === 'user' ? 'row-reverse' : 'row',
-                      px: 0, py: 0.5, // Reduced padding
-                      mb: 1, // Margin between messages
+                      px: 0, py: 0.7, // Slightly increased padding
+                      mb: 1.5, // Increased margin between messages
+                      animation: 'fadeIn 0.3s ease-in-out',
+                      '@keyframes fadeIn': {
+                        '0%': { opacity: 0, transform: 'translateY(5px)' },
+                        '100%': { opacity: 1, transform: 'translateY(0)' }
+                      }
                     }}
                   >
-                    <Box sx={{
-                        maxWidth: '75%', // Slightly reduced max width
-                        backgroundColor: message.sender === 'user' ? 'primary.main' : (message.isError ? 'error.light' : '#e0e0e0'),
-                        color: message.sender === 'user' ? 'primary.contrastText' : (message.isError ? 'error.dark' : 'text.primary'),
-                        borderRadius: message.sender === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px', // Bubble style
-                        p: 1.25, // Adjusted padding
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                    {/* Avatar for user or AI */}
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        mr: message.sender === 'user' ? 0 : 1.5,
+                        ml: message.sender === 'user' ? 1.5 : 0,
+                        mt: 0.5
                       }}
                     >
-                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                        {message.text}
+                      {message.sender === 'user' ? (
+                        <Box
+                          sx={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: '50%',
+                            backgroundColor: 'primary.light',
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                          }}
+                        >
+                          <PersonIcon sx={{ fontSize: 18, color: 'white' }} />
+                        </Box>
+                      ) : (
+                        <Box
+                          sx={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, #6a11cb 0%, #2575fc 100%)',
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                          }}
+                        >
+                          <SmartToyIcon sx={{ fontSize: 18, color: 'white' }} />
+                        </Box>
+                      )}
+                    </Box>
+                    
+                    <Box sx={{
+                        maxWidth: '70%', // Slightly reduced max width
+                        backgroundColor: message.sender === 'user' 
+                          ? 'primary.main' 
+                          : (message.isError ? 'error.light' : 'rgba(255,255,255,0.95)'),
+                        color: message.sender === 'user' 
+                          ? 'primary.contrastText' 
+                          : (message.isError ? 'error.dark' : 'text.primary'),
+                        borderRadius: message.sender === 'user' 
+                          ? '20px 20px 4px 20px' 
+                          : '20px 20px 20px 4px', // Improved bubble style
+                        p: 1.6, // More padding for better readability
+                        boxShadow: message.sender === 'user'
+                          ? '0 2px 8px rgba(25, 118, 210, 0.25)'
+                          : '0 2px 8px rgba(0,0,0,0.06)',
+                        position: 'relative', // For creating the time tooltip
+                        transition: 'all 0.2s ease-in-out', // Smooth transitions
+                        border: message.sender === 'user' 
+                          ? 'none' 
+                          : '1px solid rgba(0,0,0,0.05)',
+                        '&:hover': {
+                          boxShadow: message.sender === 'user'
+                            ? '0 4px 8px rgba(25, 118, 210, 0.35)'
+                            : '0 4px 8px rgba(0,0,0,0.14)', // Enhanced shadow on hover
+                          transform: 'translateY(-2px)'
+                        }
+                      }}
+                    >
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.6 }}>
+                        {cleanMarkdownFormatting(message.text)}                        {/* Removed animation dots at the end of AI messages */}
                         {message.sender === 'ai' && message.isStreaming && (
-                          <CircularProgress size={12} sx={{ ml: 0.5, display: 'inline-block', verticalAlign: 'middle', color: 'inherit' }} />
+                          <Box component="span" sx={{ 
+                            display: 'inline-flex', 
+                            alignItems: 'center', 
+                            ml: 0.5
+                          }}>
+                            {/* Typing indicator removed */}
+                          </Box>
                         )}
                       </Typography>
                     </Box>
-                  </ListItem>
-                ))}
+                  </ListItem>                ))}
                 <div ref={chatEndRef} />
               </List>
-            ) : ( <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}> <ChatIcon color="action" sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} /> <Typography variant="h6" color="textSecondary" align="center">Chat with your transcript</Typography> <Typography variant="body2" color="textSecondary" align="center" sx={{mt:1}}>Ask questions after recording or loading a meeting.</Typography></Box> )}
-          </Paper>
-          <Box component="form" onSubmit={handleChatSubmit} sx={{ p: 1, borderTop: '1px solid', borderColor: 'divider', backgroundColor: 'background.paper', flexShrink: 0 }}>
+            </Paper>
+            ) : (
+              rawTranscript ? (                
+                <Box 
+                  sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    height: '100%',
+                    animation: 'fadeIn 0.5s ease-out',
+                    '@keyframes fadeIn': {
+                      '0%': { opacity: 0 },
+                      '100%': { opacity: 1 }
+                    }
+                  }}
+                >
+                  <Box 
+                    sx={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: '50%',
+                      backgroundColor: '#e3f2fd',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      mb: 3,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                      animation: 'pulse 2s infinite',
+                      '@keyframes pulse': {
+                        '0%': { boxShadow: '0 0 0 0 rgba(66, 133, 244, 0.4)' },
+                        '70%': { boxShadow: '0 0 0 10px rgba(66, 133, 244, 0)' },
+                        '100%': { boxShadow: '0 0 0 0 rgba(66, 133, 244, 0)' }
+                      }
+                    }}
+                  >
+                    <ChatIcon color="primary" sx={{ fontSize: 40 }} />
+                  </Box>
+                  <Typography variant="h6" color="textSecondary" align="center">Chat with your transcript</Typography>
+                  <Typography variant="body2" color="textSecondary" align="center" sx={{mt:1, mb: 3, maxWidth: '70%'}}>
+                    Ask questions about your meeting transcript. I can help summarize key points, extract action items, or clarify details.
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'center',
+                      flexWrap: 'wrap',
+                      gap: 1,
+                      maxWidth: '80%'
+                    }}
+                  >
+                    {['What were the main topics?', 'Summarize action items', 'Who said what?'].map((suggestion) => (
+                      <Button
+                        key={suggestion}
+                        variant="outlined"
+                        size="small"
+                        onClick={() => {
+                          setChatQuery(suggestion);
+                          // Focus on the text field
+                          document.querySelector('input[type="text"]')?.focus();
+                        }}
+                        sx={{
+                          borderRadius: '16px',
+                          fontSize: '0.75rem',
+                          py: 0.5,
+                          borderColor: 'rgba(0, 0, 0, 0.12)',
+                          color: 'text.secondary',
+                          '&:hover': {
+                            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                            borderColor: 'primary.light'
+                          }
+                        }}
+                      >
+                        {suggestion}
+                      </Button>
+                    ))}
+                  </Box>
+                </Box>
+              ) : (
+                <Box 
+                  sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    height: '100%',
+                    animation: 'fadeIn 0.5s ease-out',
+                    '@keyframes fadeIn': {
+                      '0%': { opacity: 0 },
+                      '100%': { opacity: 1 }
+                    }
+                  }}
+                >
+                  <ChatIcon color="action" sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
+                  <Typography variant="h6" color="textSecondary" align="center">No transcript available</Typography>
+                  <Typography variant="body2" color="textSecondary" align="center" sx={{mt:1, mb: 2, maxWidth: '70%'}}>
+                    Record or load a meeting first to chat about it.
+                  </Typography>
+                  <Button 
+                    variant="contained" 
+                    color="primary" 
+                    onClick={() => setTabValue(0)}
+                    sx={{ 
+                      mt: 2, 
+                      borderRadius: '24px',
+                      px: 3,
+                      boxShadow: '0 3px 5px rgba(0,0,0,0.12)',
+                      '&:hover': {
+                        boxShadow: '0 5px 8px rgba(0,0,0,0.2)'
+                      }
+                    }}
+                  >
+                    Go to Recording
+                  </Button>
+                </Box>
+              )
+            )}
+          </Box>          <Box 
+            component="form" 
+            onSubmit={handleChatSubmit} 
+            sx={{ 
+              p: 1.5, 
+              backgroundColor: 'transparent',
+              flexShrink: 0,
+              position: 'relative',
+              '&:before': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: '1px',
+                background: 'linear-gradient(to right, transparent, rgba(0,0,0,0.06), transparent)',
+              }
+            }}
+          >
             <TextField
               fullWidth
               variant="outlined"
-              size="small"
-              placeholder="Ask a question about the transcript..."
+              size="medium"
+              placeholder={rawTranscript 
+                ? "Ask a question about the transcript..." 
+                : "Record or load a meeting first"}
               value={chatQuery}
               onChange={(e) => setChatQuery(e.target.value)}
               disabled={isAiResponding || !rawTranscript}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: '28px',
+                  backgroundColor: rawTranscript ? 'white' : 'rgba(0, 0, 0, 0.02)',
+                  border: 'none',
+                  transition: 'all 0.2s ease-in-out',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+                  '&.Mui-focused': {
+                    boxShadow: '0 0 0 3px rgba(25, 118, 210, 0.25), 0 2px 8px rgba(0,0,0,0.1)',
+                  },
+                  '&:hover': {
+                    boxShadow: '0 3px 8px rgba(0,0,0,0.08)',
+                    backgroundColor: rawTranscript ? 'white' : 'rgba(0, 0, 0, 0.03)'
+                  },
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(0, 0, 0, 0.1)',
+                    borderWidth: '1px'
+                  }
+                },
+                '& .MuiOutlinedInput-input': {
+                  padding: '14px 16px',
+                  fontSize: '0.95rem'
+                },
+                '& .MuiInputBase-root.Mui-disabled': {
+                  backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                  opacity: 0.8,
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(0, 0, 0, 0.1)'
+                  }
+                }
+              }}
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">
                     <IconButton
                       type="submit"
-                      color="primary"
-                      disabled={!chatQuery.trim() || isAiResponding}
-                      title="Send message"
+                      color={chatQuery.trim() && !isAiResponding && rawTranscript ? "primary" : "default"}
+                      disabled={!chatQuery.trim() || isAiResponding || !rawTranscript}
+                      title={!rawTranscript ? "No transcript available" : "Send message"}
+                      sx={{ 
+                        mx: 0.5, // Add margin for better spacing
+                        bgcolor: chatQuery.trim() && !isAiResponding && rawTranscript 
+                          ? 'primary.main' 
+                          : 'transparent',
+                        color: chatQuery.trim() && !isAiResponding && rawTranscript 
+                          ? 'white' 
+                          : undefined,
+                        transform: chatQuery.trim() && !isAiResponding && rawTranscript 
+                          ? 'scale(1.1)' // Make active button slightly larger
+                          : 'scale(1)',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          bgcolor: chatQuery.trim() && !isAiResponding && rawTranscript 
+                            ? 'primary.dark' 
+                            : undefined,
+                          transform: chatQuery.trim() && !isAiResponding && rawTranscript 
+                            ? 'scale(1.15)' // Grow slightly on hover when active
+                            : 'scale(1.05)'
+                        }
+                      }}
                     >
-                      {isAiResponding ? <CircularProgress size={24} /> : <SendIcon />}
+                      {isAiResponding ? 
+                        <CircularProgress 
+                          size={22} 
+                          thickness={4} 
+                          color="inherit"
+                          sx={{
+                            animation: 'pulse 1.2s ease-in-out infinite alternate',
+                            '@keyframes pulse': {
+                              '0%': { opacity: 0.6 },
+                              '100%': { opacity: 1 }
+                            }
+                          }}
+                        /> : 
+                        <SendIcon />
+                      }
                     </IconButton>
                   </InputAdornment>
-                )
+                ),
+              }}              onKeyDown={(e) => {
+                // Submit on Enter (not Shift+Enter)
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  // Only if we have content and not already processing
+                  if (chatQuery.trim() && !isAiResponding && rawTranscript) {
+                    e.preventDefault();
+                    handleChatSubmit(e);
+                  } else if (!rawTranscript) {
+                    // Provide feedback if no transcript available
+                    e.preventDefault();
+                    setError('Please record or load a meeting first before chatting.');
+                  } else if (!chatQuery.trim()) {
+                    // Empty query feedback
+                    e.preventDefault();
+                  }
+                } else if (e.key === 'Escape') {
+                  // Clear input on Escape
+                  setChatQuery('');
+                  e.target.blur();
+                }
               }}
             />
           </Box>
