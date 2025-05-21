@@ -9,8 +9,9 @@ const multer = require('multer');
 const fs = require('fs'); // Import File System module
 const path = require('path'); // Import Path module
 const authMiddleware = require('../middlewares/auth.middleware'); 
-// const { getErrorResponse } = require('../utils/error.utils'); // Assuming you have this
+const { getErrorResponse } = require('../utils/error.utils');
 const { initializeGemini } = require('../config/gemini.config'); // Ensure path is correct
+const { admin } = require('../config/firebase.config'); // Import Firebase Admin
 
 // --- DEBUGGING FLAG ---
 const SAVE_AUDIO_FOR_DEBUG = true; // General flag to enable saving
@@ -25,6 +26,234 @@ if (SAVE_AUDIO_FOR_DEBUG && !fs.existsSync(DEBUG_AUDIO_SAVE_PATH)) {
 }
 let hasSavedFirstChunk = false; // Flag to save only the very first chunk
 // --- END DEBUGGING FLAG ---
+
+// Initialize Firestore database instance
+const db = admin.firestore();
+
+// Route to save a meeting to Firestore
+router.post('/meeting', authMiddleware, async (req, res) => {
+  console.log('[POST /meeting] Saving meeting data');
+  try {
+    const { id, title, transcript, segments, chatHistory, summary, date } = req.body;
+    
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Unauthorized access. User ID not found in token.' 
+      });
+    }
+    
+    const userId = req.user.uid;
+    const meetingId = id || `meeting-${Date.now()}`;
+    
+    // Create the meeting document in Firestore
+    const meetingRef = db.collection('users').doc(userId).collection('meetings').doc(meetingId);
+    
+    // Prepare meeting data
+    const meetingData = {
+      title: title || 'Untitled Meeting',
+      transcript: transcript || '',
+      segments: segments || [],
+      chatHistory: chatHistory || [],
+      summary: summary || null,
+      createdAt: date || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Save to Firestore
+    await meetingRef.set(meetingData, { merge: true });
+    
+    console.log(`[POST /meeting] Meeting saved successfully for user ${userId}, meeting ID: ${meetingId}`);
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Meeting saved successfully',
+      meetingId
+    });
+  } catch (error) {
+    console.error('[POST /meeting] Error saving meeting:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to save meeting data'
+    });
+  }
+});
+
+// Route to retrieve a meeting by ID
+router.get('/meeting/:meetingId', authMiddleware, async (req, res) => {
+  console.log('[GET /meeting/:meetingId] Retrieving meeting');
+  try {
+    const { meetingId } = req.params;
+    
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Unauthorized access. User ID not found in token.' 
+      });
+    }
+    
+    const userId = req.user.uid;
+    
+    // Get meeting document from Firestore
+    const meetingRef = db.collection('users').doc(userId).collection('meetings').doc(meetingId);
+    const meetingDoc = await meetingRef.get();
+    
+    if (!meetingDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: `Meeting with ID ${meetingId} not found`
+      });
+    }
+    
+    const meetingData = {
+      id: meetingId,
+      ...meetingDoc.data()
+    };
+    
+    console.log(`[GET /meeting/:meetingId] Meeting retrieved successfully for user ${userId}, meeting ID: ${meetingId}`);
+    
+    return res.status(200).json({
+      success: true,
+      data: meetingData
+    });
+  } catch (error) {
+    console.error('[GET /meeting/:meetingId] Error retrieving meeting:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve meeting data'
+    });
+  }
+});
+
+// Route to list all meetings for a user
+router.get('/meetings', authMiddleware, async (req, res) => {
+  console.log('[GET /meetings] Retrieving all meetings');
+  try {
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Unauthorized access. User ID not found in token.' 
+      });
+    }
+    
+    const userId = req.user.uid;
+    
+    // Query meetings collection for this user
+    const meetingsRef = db.collection('users').doc(userId).collection('meetings');
+    const snapshot = await meetingsRef.orderBy('updatedAt', 'desc').get();
+    
+    const meetings = [];
+    snapshot.forEach(doc => {
+      meetings.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+    
+    console.log(`[GET /meetings] Retrieved ${meetings.length} meetings for user ${userId}`);
+    
+    return res.status(200).json({
+      success: true,
+      data: meetings
+    });
+  } catch (error) {
+    console.error('[GET /meetings] Error retrieving meetings:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve meetings'
+    });
+  }
+});
+
+// Route to update a meeting title
+router.patch('/meeting/:meetingId/title', authMiddleware, async (req, res) => {
+  console.log('[PATCH /meeting/:meetingId/title] Updating meeting title');
+  try {
+    const { meetingId } = req.params;
+    const { title } = req.body;
+    
+    if (!title) {
+      return res.status(400).json({
+        success: false,
+        error: 'Meeting title is required'
+      });
+    }
+    
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Unauthorized access. User ID not found in token.' 
+      });
+    }
+    
+    const userId = req.user.uid;
+    
+    // Update meeting title in Firestore
+    const meetingRef = db.collection('users').doc(userId).collection('meetings').doc(meetingId);
+    await meetingRef.update({
+      title,
+      updatedAt: new Date().toISOString()
+    });
+    
+    console.log(`[PATCH /meeting/:meetingId/title] Title updated successfully for meeting ${meetingId}`);
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Meeting title updated successfully'
+    });
+  } catch (error) {
+    console.error('[PATCH /meeting/:meetingId/title] Error updating meeting title:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to update meeting title'
+    });
+  }
+});
+
+// Route to delete a meeting
+router.delete('/meeting/:meetingId', authMiddleware, async (req, res) => {
+  console.log('[DELETE /meeting/:meetingId] Deleting meeting');
+  try {
+    const { meetingId } = req.params;
+    
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Unauthorized access. User ID not found in token.' 
+      });
+    }
+    
+    const userId = req.user.uid;
+    
+    // Delete meeting document from Firestore
+    const meetingRef = db.collection('users').doc(userId).collection('meetings').doc(meetingId);
+    
+    // Check if meeting exists before deleting
+    const meetingDoc = await meetingRef.get();
+    if (!meetingDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: `Meeting with ID ${meetingId} not found`
+      });
+    }
+    
+    // Delete meeting
+    await meetingRef.delete();
+    
+    console.log(`[DELETE /meeting/:meetingId] Meeting deleted successfully for user ${userId}, meeting ID: ${meetingId}`);
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Meeting deleted successfully'
+    });
+  } catch (error) {
+    console.error('[DELETE /meeting/:meetingId] Error deleting meeting:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to delete meeting'
+    });
+  }
+});
 
 const storage = multer.memoryStorage();
 const upload = multer({

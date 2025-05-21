@@ -37,14 +37,44 @@ const apiRequest = async (endpoint, options = {}) => {
     ...options,
     headers,
   };
-  
-  try {
+    try {
     const response = await fetch(url, requestOptions);
     
     // Handle unauthorized response (token expired)
     if (response.status === 401) {
-      // Could implement token refresh or redirect to login
-      console.warn('Authentication error. Redirecting to login...');
+      const responseData = await response.json();
+      console.warn('Authentication error:', responseData?.error);
+      
+      // Try to refresh the token if it's expired
+      if (responseData?.error?.includes('expired')) {
+        console.log('Token expired. Attempting to refresh...');
+        try {
+          // Import firebase auth directly here to avoid circular dependency
+          const { auth } = await import('../services/firebase');
+          if (auth.currentUser) {
+            const newToken = await auth.currentUser.getIdToken(true);
+            console.log('Token refreshed successfully');
+            localStorage.setItem('authToken', newToken);
+            
+            // Retry the request with new token
+            headers['Authorization'] = `Bearer ${newToken}`;
+            const retryOptions = {
+              ...options,
+              headers,
+            };
+            
+            console.log('Retrying request with new token');
+            const retryResponse = await fetch(url, retryOptions);
+            const retryData = await retryResponse.json();
+            return { data: retryData, status: retryResponse.status };
+          }
+        } catch (refreshError) {
+          console.error('Failed to refresh token:', refreshError);
+        }
+      }
+      
+      // If token refresh failed or user not logged in, redirect to login
+      console.warn('Authentication failed. Redirecting to login...');
       localStorage.removeItem('authToken');
       window.location.href = '/login';
       return null;
@@ -127,14 +157,16 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
     }
   },
   
-  generateSummary: (transcription, meetingId) => apiRequest('/transcription/summary', {
+  // Method to generate a meeting summary
+  generateSummary: (transcript, meetingId) => apiRequest('/summary/generate', {
     method: 'POST',
-    body: JSON.stringify({ 
-      transcription, 
-      meetingId 
+    body: JSON.stringify({
+      transcript,
+      meetingId
     })
   }),
-    chatWithTranscript: (fullTranscript, clientSideChatHistory, newUserQuery, callbacks) => {
+  
+  chatWithTranscript: (fullTranscript, clientSideChatHistory, newUserQuery, callbacks) => {
     const url = `${API_BASE_URL}/chat`;
     const token = getAuthToken();
     const headers = {
@@ -285,14 +317,31 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
         reject(err);
       });
     });
-  },
-  // New method to fetch an existing meeting by ID
-  getMeeting: (meetingId) => apiRequest(`/transcription/meeting/${meetingId}`, {
-    method: 'GET'
-  }),  // New method to save a meeting
+  },  // Method to save a meeting with Firestore storage
   saveMeeting: (meeting) => apiRequest('/transcription/meeting', {
     method: 'POST',
     body: JSON.stringify(meeting)
+  }),
+  
+  // Method to get an existing meeting by ID
+  getMeeting: (meetingId) => apiRequest(`/transcription/meeting/${meetingId}`, {
+    method: 'GET'
+  }),
+  
+  // Method to get all meetings for a user
+  getMeetings: () => apiRequest('/transcription/meetings', {
+    method: 'GET'
+  }),
+  
+  // Method to update a meeting title
+  updateMeetingTitle: (meetingId, title) => apiRequest(`/transcription/meeting/${meetingId}/title`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title })
+  }),
+  
+  // Method to delete a meeting
+  deleteMeeting: (meetingId) => apiRequest(`/transcription/meeting/${meetingId}`, {
+    method: 'DELETE'
   }),
   
   // Method to generate a meeting summary

@@ -401,13 +401,12 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
 
 
   const handleStartOverallRecording = useCallback(async () => {
-    console.log('[Recorder] User clicked Start Recording.');
-    setError('');
+    console.log('[Recorder] User clicked Start Recording.');    setError('');
     setDisplayTime(0);
     setIsFinalizing(false); // Ensure finalizing is false when starting
-    if (onTranscriptionUpdate) onTranscriptionUpdate('', { type: 'reset' });
-
-    cleanupAudioProcessing(true); 
+    // No longer reset previous transcription - allow it to accumulate
+    
+    cleanupAudioProcessing(true);
 
     const stream = await requestMicrophonePermission();
     if (!stream) return;
@@ -466,7 +465,6 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
       setRecording(false);
     }
   }, [onTranscriptionUpdate, initializeAudioVisualizer, cleanupAudioProcessing, CHUNK_DURATION, TARGET_SAMPLE_RATE, encodeAndSendCurrentAudio]);
-
   const internalHandleStopOverallRecording = useCallback(async () => {
     console.log('[Recorder] User clicked Stop Recording.');
     setRecording(false); 
@@ -486,7 +484,20 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
     
     setDisplayTime(0); 
     // setIsFinalizing(false) will be handled by internalProcessAudioChunk's finally block
-  }, [encodeAndSendCurrentAudio, cleanupAudioProcessing]);
+    
+    // Notify parent that recording has stopped and transcript should be auto-saved
+    // We'll use a 'stopped' event type with an empty text
+    if (onTranscriptionUpdate) {
+      setTimeout(() => {
+        onTranscriptionUpdate("", {
+          type: 'recording_stopped',
+          isFinal: true,
+          shouldSave: true,
+          timestamp: new Date().toISOString()
+        });
+      }, 2000); // Small delay to ensure final chunk is processed
+    }
+  }, [encodeAndSendCurrentAudio, cleanupAudioProcessing, onTranscriptionUpdate]);
 
   useEffect(() => { processAudioChunkRef.current = internalProcessAudioChunk; }, [internalProcessAudioChunk]);
   useEffect(() => { handleStopOverallRecordingRef.current = internalHandleStopOverallRecording; }, [internalHandleStopOverallRecording]);

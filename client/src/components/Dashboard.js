@@ -31,7 +31,8 @@ import {
   ListItemIcon,
   ListItemText,
   List,
-  ListItem
+  ListItem,
+  CircularProgress
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -237,7 +238,7 @@ const Dashboard = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
-  const [meetings] = useState([]);
+  const [meetings, setMeetings] = useState([]); // Updated to use state setter
   const [sidebarOpen, setSidebarOpen] = useState(false); // Default closed on all devices
 
   // We don't need to adjust sidebar visibility on resize anymore
@@ -318,9 +319,8 @@ const Dashboard = () => {
     // Clean up the activeItem when dialog is closed without renaming
     setActiveItem(null);
   };
-  
-  // Function to handle the rename meeting action
-  const handleRenameMeeting = () => {
+    // Function to handle the rename meeting action
+  const handleRenameMeeting = async () => {
     if (!newMeetingTitle.trim()) return;
     
     // Check if activeItem exists
@@ -331,29 +331,46 @@ const Dashboard = () => {
       return;
     }
     
-    // Update the meeting title in both favorites and recentMeetings arrays
-    const isFavorite = favorites.some(fav => fav.id === activeItem.id);
-    
-    if (isFavorite) {
-      setFavorites(favorites.map(fav => 
-        fav.id === activeItem.id ? { ...fav, title: newMeetingTitle } : fav
+    try {
+      setLoading(true);
+      
+      // Update meeting title in Firestore via API
+      const { transcriptionAPI } = await import('../services/api');
+      
+      if (!activeItem.id.startsWith('fav') && !activeItem.id.startsWith('recent')) {
+        // Only update in Firestore if it's a real meeting (not a demo one)
+        await transcriptionAPI.updateMeetingTitle(activeItem.id, newMeetingTitle);
+      }
+      
+      // Update the meeting title in both favorites and recentMeetings arrays
+      const isFavorite = favorites.some(fav => fav.id === activeItem.id);
+      
+      if (isFavorite) {
+        setFavorites(favorites.map(fav => 
+          fav.id === activeItem.id ? { ...fav, title: newMeetingTitle } : fav
+        ));
+      }
+      
+      setRecentMeetings(recentMeetings.map(meeting => 
+        meeting.id === activeItem.id ? { ...meeting, title: newMeetingTitle } : meeting
       ));
+      
+      // Update localStorage if this is the currently active meeting
+      const currentMeetingId = localStorage.getItem('currentMeetingId');
+      if (currentMeetingId === activeItem.id) {
+        localStorage.setItem('currentMeetingTitle', newMeetingTitle);
+      }
+      
+      setError('Meeting renamed successfully');
+      setTimeout(() => setError(''), 3000);
+    } catch (err) {
+      console.error('Error renaming meeting:', err);
+      setError('Failed to rename meeting. Please try again.');
+    } finally {
+      setLoading(false);
+      setRenameDialogOpen(false);
+      setActiveItem(null);
     }
-    
-    setRecentMeetings(recentMeetings.map(meeting => 
-      meeting.id === activeItem.id ? { ...meeting, title: newMeetingTitle } : meeting
-    ));
-    
-    // Update localStorage if this is the currently active meeting
-    const currentMeetingId = localStorage.getItem('currentMeetingId');
-    if (currentMeetingId === activeItem.id) {
-      localStorage.setItem('currentMeetingTitle', newMeetingTitle);
-    }
-    
-    setRenameDialogOpen(false);
-    // Now we can clear the activeItem
-    setActiveItem(null);
-    setError(''); // Clear any previous errors
   };
   // Function to open the delete confirmation dialog
   const handleDeleteOpen = () => {
@@ -367,10 +384,8 @@ const Dashboard = () => {
     setDeleteDialogOpen(false);
     // Clean up the activeItem when dialog is closed without deleting
     setActiveItem(null);
-  };
-
-  // Function to handle the delete meeting action
-  const handleDeleteMeeting = () => {
+  };  // Function to handle the delete meeting action
+  const handleDeleteMeeting = async () => {
     // Check if activeItem exists
     if (!activeItem) {
       console.error('No active item to delete');
@@ -379,19 +394,40 @@ const Dashboard = () => {
       return;
     }
 
-    // Remove from favorites if it exists there
-    setFavorites(favorites.filter(fav => fav.id !== activeItem.id));
-    
-    // Remove from recent meetings
-    setRecentMeetings(recentMeetings.filter(meeting => meeting.id !== activeItem.id));
-    
-    setDeleteDialogOpen(false);
-    // Now we can clear the activeItem
-    setActiveItem(null);
-    
-    // Show a temporary success message
-    setError('Meeting deleted successfully');
-    setTimeout(() => setError(''), 3000); // Clear after 3 seconds
+    try {
+      setLoading(true);
+      
+      // Add API call to delete meeting from Firestore if it's a real meeting
+      if (!activeItem.id.startsWith('fav') && !activeItem.id.startsWith('recent')) {
+        // Delete from Firestore via API
+        const { transcriptionAPI } = await import('../services/api');
+        await transcriptionAPI.deleteMeeting(activeItem.id);
+      }
+      
+      // Remove from favorites if it exists there
+      setFavorites(favorites.filter(fav => fav.id !== activeItem.id));
+      
+      // Remove from recent meetings
+      setRecentMeetings(recentMeetings.filter(meeting => meeting.id !== activeItem.id));
+      
+      // Clear localStorage if this was the current meeting
+      const currentMeetingId = localStorage.getItem('currentMeetingId');
+      if (currentMeetingId === activeItem.id) {
+        localStorage.removeItem('currentMeetingId');
+        localStorage.removeItem('currentMeetingTitle');
+      }
+      
+      // Show a temporary success message
+      setError('Meeting deleted successfully');
+      setTimeout(() => setError(''), 3000);
+    } catch (err) {
+      console.error('Error deleting meeting:', err);
+      setError('Failed to delete meeting. Please try again.');
+    } finally {
+      setLoading(false);
+      setDeleteDialogOpen(false);
+      setActiveItem(null);
+    }
   };
   // Helper function to format date for display
   const formatDate = (dateString) => {
@@ -429,7 +465,6 @@ const Dashboard = () => {
   
   // Get grouped meetings
   const groupedRecentMeetings = getMeetingsByDate(recentMeetings);
-
   useEffect(() => {
     // Fetch user profile data to verify authentication works
     const fetchProfileData = async () => {
@@ -448,6 +483,44 @@ const Dashboard = () => {
 
     fetchProfileData();
   }, []);
+  
+  // Fetch saved meetings from Firestore
+  useEffect(() => {
+    const fetchMeetings = async () => {
+      try {
+        setLoading(true);
+        const { transcriptionAPI } = await import('../services/api');
+        const response = await transcriptionAPI.getMeetings();
+        
+        if (response && response.data && response.data.success) {
+          const fetchedMeetings = response.data.data || [];
+          
+          // Update the recent meetings list with fetched data
+          const formattedMeetings = fetchedMeetings.map(meeting => ({
+            id: meeting.id,
+            title: meeting.title || 'Untitled Meeting',
+            date: meeting.createdAt || meeting.updatedAt || new Date().toISOString()
+          }));
+          
+          // Sort by date (newest first)
+          formattedMeetings.sort((a, b) => new Date(b.date) - new Date(a.date));
+          
+          setRecentMeetings(formattedMeetings);
+          setMeetings(fetchedMeetings); // Store the full meeting data
+        }
+      } catch (err) {
+        console.error('Error fetching meetings:', err);
+        setError('Failed to load meetings');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    // Only fetch if user is authenticated
+    if (currentUser) {
+      fetchMeetings();
+    }
+  }, [currentUser]);
 
   // Sync meeting names from localStorage when returning to Dashboard
   useEffect(() => {
@@ -634,82 +707,92 @@ const Dashboard = () => {
                   }} 
                 />
               )}
-            </Box>
-
-            {/* RECENT MEETINGS - Taking all remaining space */}
+            </Box>            {/* RECENT MEETINGS - Taking all remaining space */}
             <Box sx={{ flexGrow: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <NavTitle>RECENT MEETINGS</NavTitle>
               <Box sx={{ overflowY: 'auto', flexGrow: 1 }}>
-                {Object.entries(groupedRecentMeetings).map(([date, meetings]) => (
-                  <Box key={date}>
-                    <Typography 
-                      variant="caption" 
-                      sx={{ 
-                        display: 'block', 
-                        pl: 1.5, 
-                        mb: 0.5, 
-                        mt: 1.5, 
-                        color: 'text.secondary',
-                        fontSize: '0.7rem'
-                      }}
-                    >
-                      {date}
+                {loading ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
+                    <CircularProgress size={24} sx={{ color: '#ff7300' }} />
+                  </Box>
+                ) : recentMeetings.length === 0 ? (
+                  <Box sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">
+                      No saved meetings yet
                     </Typography>
-                    
-                    {meetings.map(meeting => (
-                      <Box
-                        key={meeting.id}
+                  </Box>
+                ) : (
+                  Object.entries(groupedRecentMeetings).map(([date, meetings]) => (
+                    <Box key={date}>
+                      <Typography 
+                        variant="caption" 
                         sx={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          width: '100%',
-                          mb: 0.5,
+                          display: 'block', 
+                          pl: 1.5, 
+                          mb: 0.5, 
+                          mt: 1.5, 
+                          color: 'text.secondary',
+                          fontSize: '0.7rem'
                         }}
                       >
-                        <NavItem 
-                          onClick={() => {
-                            // Store meeting info in localStorage before navigating
-                            localStorage.setItem('currentMeetingTitle', meeting.title);
-                            localStorage.setItem('currentMeetingId', meeting.id);
-                            navigate(`/transcription/${meeting.id}`);
-                            if (window.innerWidth < 960) {
-                              toggleSidebar(); // Close sidebar on mobile after selection
-                            }
-                          }}
+                        {date}
+                      </Typography>
+                      
+                      {meetings.map(meeting => (
+                        <Box
+                          key={meeting.id}
                           sx={{ 
-                            flexGrow: 1,
-                            mb: 0,
-                            pr: 1,
-                            textAlign: 'left',
-                            justifyContent: 'flex-start',
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            width: '100%',
+                            mb: 0.5,
                           }}
                         >
-                          <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                            <ForumIcon sx={{ fontSize: 18, mr: 1.5, opacity: 0.7, flexShrink: 0 }} />
-                            <Box sx={{ 
-                              flexGrow: 1, 
-                              overflow: 'hidden', 
-                              textOverflow: 'ellipsis', 
-                              whiteSpace: 'nowrap',
+                          <NavItem 
+                            onClick={() => {
+                              // Store meeting info in localStorage before navigating
+                              localStorage.setItem('currentMeetingTitle', meeting.title);
+                              localStorage.setItem('currentMeetingId', meeting.id);
+                              navigate(`/transcription/${meeting.id}`);
+                              if (window.innerWidth < 960) {
+                                toggleSidebar(); // Close sidebar on mobile after selection
+                              }
+                            }}
+                            sx={{ 
+                              flexGrow: 1,
+                              mb: 0,
+                              pr: 1,
                               textAlign: 'left',
                               justifyContent: 'flex-start',
-                              display: 'block'
-                            }}>
-                              {meeting.title}
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                              <ForumIcon sx={{ fontSize: 18, mr: 1.5, opacity: 0.7, flexShrink: 0 }} />
+                              <Box sx={{ 
+                                flexGrow: 1, 
+                                overflow: 'hidden', 
+                                textOverflow: 'ellipsis', 
+                                whiteSpace: 'nowrap',
+                                textAlign: 'left',
+                                justifyContent: 'flex-start',
+                                display: 'block'
+                              }}>
+                                {meeting.title}
+                              </Box>
                             </Box>
-                          </Box>
-                        </NavItem>
-                        <IconButton 
-                          size="small" 
-                          sx={{ width: 28, height: 28, opacity: 0.6 }}
-                          onClick={(e) => handleMenuOpen(e, meeting)}
-                        >
-                          <MoreVertIcon fontSize="small" />
-                        </IconButton>
-                      </Box>
-                    ))}
-                  </Box>
-                ))}
+                          </NavItem>
+                          <IconButton 
+                            size="small" 
+                            sx={{ width: 28, height: 28, opacity: 0.6 }}
+                            onClick={(e) => handleMenuOpen(e, meeting)}
+                          >
+                            <MoreVertIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      ))}
+                    </Box>
+                  ))
+                )}
               </Box>
             </Box>
           </Box>
