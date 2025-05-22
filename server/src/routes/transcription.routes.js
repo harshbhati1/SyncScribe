@@ -46,6 +46,13 @@ router.post('/meeting', authMiddleware, async (req, res) => {
     const userId = req.user.uid;
     const meetingId = id || `meeting-${Date.now()}`;
     
+    // Log the chat history details to help with debugging
+    console.log(`[POST /meeting] Chat history received: ${chatHistory?.length || 0} messages`);
+    if (chatHistory && chatHistory.length > 0) {
+      console.log(`[POST /meeting] First chat message: ${JSON.stringify(chatHistory[0])}`);
+      console.log(`[POST /meeting] Last chat message: ${JSON.stringify(chatHistory[chatHistory.length - 1])}`);
+    }
+    
     // Create the meeting document in Firestore
     const meetingRef = db.collection('users').doc(userId).collection('meetings').doc(meetingId);
     

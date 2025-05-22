@@ -62,6 +62,13 @@ const TabPanel = styled(Box)(({ theme }) => ({
   // Ensuring the TabPanel takes up available vertical space
   // The parent Box of Transcription.js already has display: 'flex', flexDirection: 'column', height: '100vh'
   // So, flexGrow: 1 on TabPanel should make it expand.
+  
+  // Add event handling for all TabPanels by default
+  '&:click': (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    console.log('[TabPanel] Click event intercepted');
+  }
 }));
 
 const RecordingDot = styled('div')(({ theme, isRecording }) => ({
@@ -148,10 +155,27 @@ const Transcription = () => {
   const recordingIntervalRefLocal = useRef(null);
   const recordingTimeRefLocal = useRef(0);
   const [recordingTimeLocal, setRecordingTimeLocal] = useState(0);
-  const chatEndRef = useRef(null); // For scrolling chat to bottom
-
-  // Handle tab change
-  const handleTabChange = (event, newValue) => setTabValue(newValue);
+  const chatEndRef = useRef(null); // For scrolling chat to bottom  // Handle tab change
+  const handleTabChange = (event, newValue) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      
+      // Check if this is a legitimate tab change vs a potential side effect
+      if (typeof event.currentTarget !== 'undefined') {
+        console.log(`[Transcription] Tab change initiated by: ${event.currentTarget.tagName || 'unknown'}`);
+      }
+    }
+    
+    // Save before changing tabs
+    if (chatMessages.length > 0) {
+      console.log('[Transcription] Saving before tab change to preserve chat messages');
+      saveTranscription();
+    }
+    
+    setTabValue(newValue);
+    console.log(`[Transcription] Tab set to ${newValue}`);
+  };
   
   // Handle snackbar close
   const handleSnackbarClose = () => setSnackbarOpen(false);
@@ -240,8 +264,7 @@ const Transcription = () => {
       if (refreshToken) {
         await refreshToken(true);
         console.log('Refreshed token before saving meeting');
-      }
-        // Create meeting data object
+      }        // Create meeting data object
       const meetingData = {
         id: meetingId || `meeting-${Date.now()}`, // Use existing or generate new
         title: meetingTitle,
@@ -254,8 +277,32 @@ const Transcription = () => {
         updatedAt: new Date().toISOString() // Always update the updatedAt timestamp
       };
       
+      // Log what we're saving for debugging purposes
+      console.log(`[Transcription] Saving meeting data: ${meetingData.id}`);
+      console.log(`[Transcription] - Transcript length: ${rawTranscript?.length || 0} characters`);
+      console.log(`[Transcription] - Chat messages: ${chatMessages?.length || 0}`);
+      console.log(`[Transcription] - Has summary: ${summary ? 'Yes' : 'No'}`);
+      console.log(`[Transcription] - Title: ${meetingTitle}`);      // Ensure chat messages have all required fields for display
+      const sanitizedChatMessages = chatMessages.map(msg => ({
+        id: msg.id || `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        text: msg.text || '',
+        sender: msg.sender || 'user',
+        isStreaming: false, // Always false when saving
+        timestamp: msg.timestamp || new Date().toISOString()
+      }));
+      
+      console.log(`[Transcription] Preparing to save ${sanitizedChatMessages.length} chat messages`);
+      console.log(`[Transcription] Chat messages sample:`, sanitizedChatMessages.length > 0 ? 
+        `First: ${sanitizedChatMessages[0].text.substring(0, 30)}...` : 'None');
+      
+      // Update the meeting data object with sanitized chat messages
+      const finalMeetingData = {
+        ...meetingData,
+        chatHistory: sanitizedChatMessages
+      };
+      
       // Save meeting data to Firestore through API
-      const response = await transcriptionAPI.saveMeeting(meetingData);
+      const response = await transcriptionAPI.saveMeeting(finalMeetingData);
       
       if (response && response.data && response.data.meetingId) {
         const savedMeetingId = response.data.meetingId;
@@ -282,14 +329,18 @@ const Transcription = () => {
       setIsProcessing(false);
     }
   }, [meetingId, meetingTitle, rawTranscript, transcriptionSegments, chatMessages, summary, refreshToken, navigate, setIsProcessing, setSnackbarMessage, setSnackbarOpen, setError]);
-  
-  // Auto-save functionality - defined after saveTranscription is fully defined
+    // Auto-save functionality - defined after saveTranscription is fully defined
   const autoSaveTranscription = useCallback(() => {
-    if (rawTranscript && rawTranscript.length > 50) {
-      console.log('[Transcription] Auto-saving transcription data');
-      saveTranscription();
+    if ((rawTranscript && rawTranscript.length > 50) || chatMessages.length > 0 || summary) {
+      console.log('[Transcription] Auto-saving transcription, chat history, and summary data');
+      console.log(`[Transcription] Data stats: ${rawTranscript?.length || 0} chars transcript, ${chatMessages.length} chat messages, summary: ${summary ? 'yes' : 'no'}`);
+      
+      // Set a slight delay to allow any pending state updates to complete
+      setTimeout(() => {
+        saveTranscription();
+      }, 100);
     }
-  }, [rawTranscript, saveTranscription]);
+  }, [rawTranscript, chatMessages, summary, saveTranscription]);
   
   // Generate summary function
   const generateSummary = useCallback(async () => {
@@ -297,17 +348,38 @@ const Transcription = () => {
       setError("No transcript available to summarize.");
       return;
     }
-    try {
+    
+    // Don't generate if already processing or if summary already exists
+    if (isProcessing) {
+      console.log("Already processing, won't generate a new summary");
+      return;
+    }
+    
+    if (summary) {
+      console.log("Summary already exists, won't generate a new one");
+      setTabValue(2); // Just switch to the summary tab
+      return;
+    }
+      try {
       setIsProcessing(true);
-      const response = await transcriptionAPI.generateSummary(rawTranscript, meetingId);
-      if (response && response.data && response.data.summary) {
+      
+      // Show notification that we're generating a summary
+      setSnackbarMessage("Generating meeting summary... This may take a moment.");
+      setSnackbarOpen(true);
+      console.log("Starting summary generation...");
+      const response = await transcriptionAPI.generateSummary(rawTranscript, meetingId);          if (response && response.data && response.data.summary) {
         setSummary(response.data.summary);
         setTabValue(2); // Switch to summary tab
-        
-        // Set success snackbar message
+          // Set success snackbar message
         setSnackbarMessage("Summary generated successfully!");
         setSnackbarOpen(true);
+        console.log("Summary generated successfully!");
         
+        // Save the meeting data with the newly generated summary
+        setTimeout(() => {
+          console.log("Auto-saving meeting data with new summary");
+          saveTranscription();
+        }, 1000);
         // Update title from summary if the meeting title is generic or not manually set
         if (response.data.summary.title && 
             (meetingTitle === 'New Meeting' || 
@@ -327,19 +399,21 @@ const Transcription = () => {
               console.error('Error updating meeting title from summary:', titleUpdateError);
             }
           }
-        }
-      } else {
+        }      } else {
          setError(response?.data?.error || 'Failed to get summary content from API.');
+         setSnackbarMessage("Failed to generate summary. Please try again.");
+         setSnackbarOpen(true);
+         console.error("Summary generation failed:", response?.data?.error || 'Failed to get summary content from API');
       }
-    } catch (err) {
-        console.error('Error generating summary:', err);
+    } catch (err) {        console.error('Error generating summary:', err);
         setError('API call to generate summary failed.');
-    } finally {
+        setSnackbarMessage("Failed to generate summary. Please try again.");
+        setSnackbarOpen(true);
+        console.error("Summary generation exception:", err.message || 'Unknown error');} finally {
         setIsProcessing(false);
     }
-  }, [rawTranscript, meetingId, meetingTitle, setError, setSummary, setTabValue, setIsProcessing, setSnackbarMessage, setSnackbarOpen]);  
-  
-  // --- Callback for MeetingRecorder component (updates main transcript) - no animation ---
+  }, [rawTranscript, meetingId, meetingTitle, summary, setError, setSummary, setTabValue, setIsProcessing, setSnackbarMessage, setSnackbarOpen]);
+    // --- Callback for MeetingRecorder component (updates main transcript) - no animation ---
   const handleMeetingRecorderUpdate = useCallback((textChunk, metadata) => {
     // No reset handling - transcripts are now permanent
     
@@ -349,13 +423,25 @@ const Transcription = () => {
       setError(chunkToProcess); // Display error in global error state
     } else {
       setError(''); // Clear error if successful transcription
-    }
-    
-    // Handle recording stopped event - this is for auto-saving when recording stops
+    }    // Handle recording stopped event - this is for auto-saving and generating summary when recording stops
     if (metadata && metadata.type === 'recording_stopped' && metadata.shouldSave) {
       console.log("Recording stopped, auto-saving transcript...");
       setTimeout(() => {
         autoSaveTranscription();
+        
+        // Check if we should auto-generate summary - ensure we don't already have a summary,
+        // have enough text, and aren't already processing
+        if (rawTranscript && rawTranscript.length > 50 && !summary && !isProcessing) {
+          console.log("Automatically generating summary after recording stopped...");
+          // Show notification before generating summary
+          setSnackbarMessage("Generating summary of your meeting...");
+          setSnackbarOpen(true);
+          
+          // Short delay to ensure UI updates first
+          setTimeout(() => {
+            generateSummary();
+          }, 300);
+        }
       }, 1000);
       return;
     }
@@ -383,20 +469,31 @@ const Transcription = () => {
     
     if (metadata) {
       setTranscriptionSegments(prev => [...prev, { ...metadata, text: chunkToProcess || "" }]);
-      
-      // Auto-generate summary when the final transcript chunk is received
+        // Auto-generate summary when the final transcript chunk is received, but only if we don't already have a summary
       if ((metadata.isFinal === true || metadata.type === 'segment_final_empty') && 
           !isProcessing && // Avoid duplicate calls
           rawTranscript && 
-          rawTranscript.length > 30) {
-        console.log("Recording stopped, automatically generating summary...");
+          rawTranscript.length > 50 &&
+          !summary) { // Only generate if we don't already have a summary
+        console.log("Recording stopped, checking if we need to generate summary...");
         // Use setTimeout to ensure we have the final rawTranscript with the last chunk
         setTimeout(() => {
-          generateSummary();
+          // Double-check all conditions again to avoid race conditions
+          if (!summary && !isProcessing && rawTranscript && rawTranscript.length > 50) {
+            console.log("Automatically generating summary...");
+            // Show notification before generating summary
+            setSnackbarMessage("Generating summary of your meeting...");
+            setSnackbarOpen(true);
+            
+            // Short delay to ensure UI updates first
+            setTimeout(() => {
+              generateSummary();
+            }, 300);
+          }
         }, 500);
       }
     }
-  }, [rawTranscript, isProcessing, generateSummary, autoSaveTranscription]);
+  }, [rawTranscript, isProcessing, generateSummary, autoSaveTranscription, summary, setSnackbarMessage, setSnackbarOpen]);
 
   // --- Local MediaRecorder Logic (If you intend to use it alongside MeetingRecorder) ---
   // Ensure this logic is distinct or integrated if MeetingRecorder is the primary.
@@ -439,7 +536,6 @@ const Transcription = () => {
       }
     };
   }, []); // Empty dependency array for mount/unmount cleanup
-
   // --- CHAT SUBMIT HANDLER ---
   const handleChatSubmit = async (e) => {
     e?.preventDefault();
@@ -451,17 +547,28 @@ const Transcription = () => {
     const historyToSend = chatMessages.map(msg => ({
         sender: msg.sender,
         text: msg.text
-    }));    // Add user message to chat history
+    }));
+    
+    console.log(`[Transcription] Current chat history before adding new message: ${chatMessages.length} messages`);
+    
+    // Add user message to chat history
     const userMessage = {
       id: `user-${Date.now()}`,
       text: currentTextQuery,
-      sender: 'user'
+      sender: 'user',
+      timestamp: new Date().toISOString()
     };
-    
-    // Update UI immediately
+      // Update UI immediately
     setChatMessages(prevMessages => [...prevMessages, userMessage]);
     setChatQuery(''); // Clear input field
     setIsAiResponding(true);
+
+    // Save chat messages immediately after adding user message
+    setTimeout(() => {
+      console.log('[Transcription] Auto-saving after adding user chat message');
+      console.log(`[Transcription] Chat message count before save: ${chatMessages.length + 1}`);
+      saveTranscription();
+    }, 500);
     
     // Generate ID for AI response
     currentAiMessageIdRef.current = `ai-${Date.now()}`;
@@ -525,8 +632,7 @@ const Transcription = () => {
                   ? { ...msg, text: (msg.text || "") + textChunk }
                   : msg
               )
-            );
-          },onEnd: () => {
+            );          },onEnd: () => {
             // Mark message as complete when stream ends
             setChatMessages(prevMessages => {
               const currentMessage = prevMessages.find(msg => msg.id === currentAiMessageIdRef.current);
@@ -545,6 +651,12 @@ const Transcription = () => {
             
             setIsAiResponding(false);
             currentAiMessageIdRef.current = null;
+              // Auto-save after chat completes to preserve conversation history
+            setTimeout(() => {
+              console.log('[Transcription] Saving meeting data after chat response completed');
+              console.log(`[Transcription] Chat message count after AI response: ${chatMessages.length}`);
+              saveTranscription();
+            }, 1000);
           },onError: (error) => {
             console.error("Chat stream error:", error);
             // Format error message based on type
@@ -615,19 +727,20 @@ const Transcription = () => {
       );
       setIsAiResponding(false);
       currentAiMessageIdRef.current = null;
-      setError(`Chat error: ${apiSetupError.message || 'Failed to initiate chat'}`);    }  };
-
-  // Auto-save when transcript changes significantly or user is inactive
+      setError(`Chat error: ${apiSetupError.message || 'Failed to initiate chat'}`);    }  };  // Auto-save when transcript changes significantly, chat messages are added, or user is inactive
   useEffect(() => {
-    // Only attempt auto-save if we have meaningful transcript data
-    if (rawTranscript && rawTranscript.length > 200) {
+    // Only attempt auto-save if we have meaningful transcript data or chat messages
+    if ((rawTranscript && rawTranscript.length > 200) || chatMessages.length > 0) {
+      console.log('[Transcription] Setting up auto-save timer based on transcript/chat changes');
       const autoSaveTimer = setTimeout(() => {
+        console.log('[Transcription] Auto-saving due to transcript or chat changes');
+        console.log(`[Transcription] Current chat messages count: ${chatMessages.length}`);
         autoSaveTranscription();
-      }, 30000); // Auto-save after 30 seconds of inactivity
+      }, 15000); // Auto-save after 15 seconds of inactivity
       
       return () => clearTimeout(autoSaveTimer);
     }
-  }, [rawTranscript, autoSaveTranscription]);
+  }, [rawTranscript, chatMessages.length, autoSaveTranscription]);
   
   // Auto-save when user navigates away 
   useEffect(() => {
@@ -643,14 +756,24 @@ const Transcription = () => {
       return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [rawTranscript, saveTranscription]);
-  // Load existing meeting data
+  }, [rawTranscript, saveTranscription]);  // Load existing meeting data
   useEffect(() => {
+    console.log(`[Transcription] loadMeetingData effect triggered, meetingId: ${meetingId || 'new'}, tabValue: ${tabValue}`);
+    
+    // Track which tab triggered the reload (if applicable)
+    if (meetingId === null || meetingId === undefined) {
+      console.log(`[Transcription] WARNING: Meeting ID is ${meetingId}, this might indicate an unwanted reload`);
+      console.log(`[Transcription] Current tab is ${tabValue}`);
+      // Track the stack trace to find what triggered this effect
+      console.trace('[Transcription] Stack trace for meeting data load:');
+    }
+    
     const loadMeetingData = async () => {
       if (meetingId) {
         setIsProcessing(true);
         setError(''); // Clear previous errors
         setHasAutoSwitchedToChat(false); // Reset flag when loading a new meeting
+        console.log(`[Transcription] Loading meeting data for meetingId: ${meetingId}`);
         try {
           const response = await transcriptionAPI.getMeeting(meetingId);
           if (response && response.data && response.data.success) {
@@ -667,13 +790,72 @@ const Transcription = () => {
             } else {
               localStorage.removeItem('titleManuallySet');
             }
-            
-            // Set meeting data
+              // Set meeting data
             setRawTranscript(meetingData.transcript || "");
             setAnimatedDisplayedTranscript(meetingData.transcript || "");
-            setTranscriptionSegments(meetingData.segments || []);
-            setChatMessages(meetingData.chatHistory || []); 
-            setSummary(meetingData.summary || null);
+            setTranscriptionSegments(meetingData.segments || []);            // Handle chat history with proper logging
+            let chatHistory = [];
+            try {
+              console.log('[Transcription] Chat history from API:', meetingData.chatHistory);
+              
+              if (Array.isArray(meetingData.chatHistory)) {
+                chatHistory = meetingData.chatHistory;
+                
+                // Ensure all chat messages have the required fields
+                chatHistory = chatHistory.map(msg => ({
+                  id: msg.id || `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                  text: msg.text || '',
+                  sender: msg.sender || 'user',
+                  isStreaming: false, // Always false when loading saved messages
+                  timestamp: msg.timestamp || new Date().toISOString()
+                }));
+                
+                console.log(`[Transcription] Loaded ${chatHistory.length} chat messages for meeting ${meetingId}`);
+                if (chatHistory.length > 0) {
+                  console.log(`[Transcription] First chat message: ${chatHistory[0].text.substring(0, 30)}...`);
+                  console.log(`[Transcription] Last chat message: ${chatHistory[chatHistory.length - 1].text.substring(0, 30)}...`);
+                }
+              } else {
+                console.warn('[Transcription] Chat history is not an array:', typeof meetingData.chatHistory);
+                chatHistory = []; // Initialize as empty array if not valid
+              }
+            } catch (chatError) {
+              console.error('[Transcription] Error processing chat history, will use empty array:', chatError);
+              console.error('[Transcription] Error details:', chatError.message);
+              console.error('[Transcription] Meeting data structure:', JSON.stringify(meetingData, null, 2).substring(0, 500) + '...');
+              chatHistory = []; // Reset to empty array on error
+            }
+            
+            // Explicitly set chat messages state
+            setChatMessages(chatHistory);
+              // If there are chat messages, consider showing the chat tab
+            if (chatHistory.length > 0) {
+              console.log('[Transcription] Found chat messages, will set to chat tab');
+              // Set tab after a short delay to ensure UI is ready
+              setTimeout(() => {
+                console.log(`[Transcription] Switching to chat tab with ${chatHistory.length} messages`);
+                setTabValue(1);
+              }, 300);
+            }// Handle summary data with proper logging
+            try {
+              if (meetingData.summary) {
+                console.log(`[Transcription] Loaded summary for meeting ${meetingId}`);
+                setSummary(meetingData.summary);
+                
+                // If we have a summary and no chat messages, show the summary tab
+                if (!chatHistory.length) {
+                  console.log('[Transcription] Found summary data, will set to summary tab');
+                  // Set tab after a short delay to ensure UI is ready
+                  setTimeout(() => setTabValue(2), 300);
+                }
+              } else {
+                console.log(`[Transcription] No summary found for meeting ${meetingId}`);
+                setSummary(null);
+              }
+            } catch (summaryError) {
+              console.error('[Transcription] Error processing summary data:', summaryError);
+              setSummary(null);
+            }
             
             // Store current meeting ID
             localStorage.setItem('currentMeetingId', meetingId);
@@ -725,26 +907,20 @@ const Transcription = () => {
     };
     loadMeetingData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meetingId]); // Rerun if meetingId changes
-  // Automatically switch to chat tab when transcript becomes available
+  }, [meetingId]); // Rerun if meetingId changes  // Previously automatically switched to chat tab when transcript became available
+  // This behavior has been removed per requirement
   useEffect(() => {
-    // If we have a transcript and no chat messages yet, show the chat tab with suggestions
+    // If we have a transcript, we update the hasAutoSwitchedToChat state
+    // but no longer automatically switch tabs
     if (
       rawTranscript && 
       rawTranscript.length > 50 && 
-      chatMessages.length === 0 && 
-      tabValue !== 1 && 
-      !hasAutoSwitchedToChat // Only auto-switch if we haven't done it yet for this context
+      !hasAutoSwitchedToChat
     ) {
-      // Use slight delay to ensure the transcript is fully processed
-      const timer = setTimeout(() => {
-        setTabValue(1);
-        setHasAutoSwitchedToChat(true); // Mark that we've auto-switched for this context
-        console.log("[Transcription] Auto-switching to chat tab due to new transcript");
-      }, 1000);
-      return () => clearTimeout(timer);
+      console.log("[Transcription] Transcript available, but not auto-switching to chat tab (feature disabled)");
+      setHasAutoSwitchedToChat(true); // Still mark that transcript is available
     }
-  }, [rawTranscript, chatMessages.length, tabValue, hasAutoSwitchedToChat]);  // Format text by preserving and converting markdown symbols to styling  
+  }, [rawTranscript, hasAutoSwitchedToChat]);// Format text by preserving and converting markdown symbols to styling  
   const cleanMarkdownFormatting = (text) => {
     if (!text) return '';
     
@@ -774,8 +950,7 @@ const Transcription = () => {
       // Convert line breaks (but not inside code blocks)
       .replace(/(?<!<pre[^>]*>)(?<!<code[^>]*>)\n(?![^<]*<\/pre>)(?![^<]*<\/code>)/g, '<br/>');
   };  
-  
-  return (
+    return (
     <Box sx={{ 
       flexGrow: 1, 
       height: '100vh', 
@@ -784,7 +959,15 @@ const Transcription = () => {
       background: 'linear-gradient(145deg, #ffffff, #f8fafc)',
       backgroundAttachment: 'fixed',
       color: '#334155'
-    }}>
+    }}
+    onClick={(e) => {
+      // This is the root component, trap any stray clicks
+      // Log only when we're on the summary tab to avoid noise
+      if (tabValue === 2) {
+        console.log('[Transcription] Root container click', e.target);
+      }
+    }}
+    >
       <StyledAppBar position="static">
         <Toolbar>
           <IconButton 
@@ -857,10 +1040,17 @@ const Transcription = () => {
               </Box>
             )}
           </Box>
-        </Toolbar>
-        <Tabs 
+        </Toolbar>        <Tabs 
           value={tabValue} 
-          onChange={handleTabChange} 
+          onChange={(event, newValue) => {
+            console.log(`[Transcription] Tabs onChange triggered for tab ${newValue}`);
+            event.stopPropagation();
+            handleTabChange(event, newValue);
+          }} 
+          onClick={(e) => {
+            // Prevent click events from bubbling up from the tabs container
+            e.stopPropagation();
+          }}
           variant="fullWidth" 
           sx={{
             '& .MuiTab-root': {
@@ -891,30 +1081,35 @@ const Transcription = () => {
               transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
             }
           }}
-        >
-          <Tab icon={<ArticleIcon fontSize="small" />} iconPosition="start" label="Transcript" />
-          <Tab icon={<ChatIcon fontSize="small" />} iconPosition="start" label="Chat" />
-          <Tab icon={<SummarizeIcon fontSize="small" />} iconPosition="start" label="Summary" />
-        </Tabs>
+        >          <Tab 
+            icon={<ArticleIcon fontSize="small" />} 
+            iconPosition="start" 
+            label="Transcript" 
+            onClick={(e) => {
+              // Handle tab clicks directly to ensure proper event handling
+              e.stopPropagation();
+            }}
+          />
+          <Tab 
+            icon={<ChatIcon fontSize="small" />} 
+            iconPosition="start" 
+            label="Chat" 
+            onClick={(e) => {
+              // Handle tab clicks directly to ensure proper event handling
+              e.stopPropagation();
+            }}
+          />
+          <Tab 
+            icon={<SummarizeIcon fontSize="small" />} 
+            iconPosition="start" 
+            label="Summary" 
+            onClick={(e) => {
+              // Handle tab clicks directly to ensure proper event handling
+              console.log("[Transcription] Summary tab clicked directly");
+              e.stopPropagation();
+            }}
+          /></Tabs>
       </StyledAppBar>
-
-      {error && (
-        <EnhancedNotifications
-          open={Boolean(error)}
-          message={error}
-          severity="error"
-          onClose={() => setError('')}
-        />
-      )}
-      
-      {isProcessing && (
-        <EnhancedNotifications
-          open={isProcessing}
-          message="Generating meeting summary... This may take a few moments."
-          severity="info"
-          loading={true}
-        />
-      )}
 
       {/* Transcript Tab */}
       <TabPanel hidden={tabValue !== 0} value={tabValue} index={0}>
@@ -1027,10 +1222,41 @@ const Transcription = () => {
             setError={setError}
           />
         </Box>
-      </TabPanel>
-
-      {/* Summary Tab */}      <TabPanel hidden={tabValue !== 2} value={tabValue} index={2}>
-        {summary ? (         <Box>            <Card sx={{ 
+      </TabPanel>      {/* Summary Tab */}      <TabPanel 
+        hidden={tabValue !== 2} 
+        value={tabValue} 
+        index={2}
+        onClick={(e) => {
+          console.log("[Transcription] TabPanel onClick triggered");
+          e.stopPropagation();
+          e.preventDefault();
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onMouseUp={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+      >        {summary ? (
+         <Box 
+          onClick={(e) => {
+            console.log("[Transcription] Main summary Box onClick prevented");
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+          onScroll={(e) => e.stopPropagation()}
+         ><Card 
+              onClick={(e) => {
+                console.log("[Transcription] Card onClick prevented");
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onMouseUp={(e) => e.stopPropagation()} 
+              onScroll={(e) => e.stopPropagation()}
+              sx={{ 
                 mb: 3, 
                 boxShadow: '0 4px 20px rgba(11, 79, 117, 0.1)',
                 borderRadius: '16px',
@@ -1041,11 +1267,11 @@ const Transcription = () => {
                   boxShadow: '0 6px 24px rgba(11, 79, 117, 0.15)',
                   transform: 'translateY(-2px)'
                 }
-            }}>
-                <CardContent sx={{ p: 3 }}>                    <Typography 
+            }}><CardContent sx={{ p: 3 }} onClick={(e) => e.stopPropagation()}>                    <Typography 
                       variant="h5" 
                       gutterBottom 
                       component="div" 
+                      onClick={(e) => e.stopPropagation()}
                       sx={{
                         color: '#0b4f75', 
                         fontWeight: 600,
@@ -1054,11 +1280,11 @@ const Transcription = () => {
                       }}
                     >
                       {summary.title || "Meeting Summary"}
-                    </Typography>
-                    <Divider sx={{ my: 2, borderColor: 'rgba(226, 232, 240, 0.8)' }} />                    {summary.overall && (
-                      <Box mb={2}>
+                    </Typography>                    <Divider sx={{ my: 2, borderColor: 'rgba(226, 232, 240, 0.8)' }} onClick={(e) => e.stopPropagation()} />                    {summary.overall && (
+                      <Box mb={2} onClick={(e) => e.stopPropagation()}>
                         <Typography 
                           variant="subtitle1" 
+                          onClick={(e) => e.stopPropagation()}
                           sx={{
                             fontWeight: 600,
                             color: '#0b4f75',
@@ -1067,9 +1293,9 @@ const Transcription = () => {
                           }}
                         >
                           Overall Summary
-                        </Typography>
-                        <Typography 
+                        </Typography>                        <Typography 
                           variant="body2" 
+                          onClick={(e) => e.stopPropagation()}
                           sx={{
                             whiteSpace: 'pre-wrap', 
                             mt: 0.5,
@@ -1080,94 +1306,136 @@ const Transcription = () => {
                           {summary.overall}
                         </Typography>
                       </Box>
-                    )}
-                      {/* Dynamic sections from AI analysis */}
-                    {summary.sections && summary.sections.map((section, sectionIndex) => (
-                      <Box key={`section-${sectionIndex}`} mb={2}>
-                        <Typography 
-                          variant="subtitle1" 
-                          sx={{
-                            fontWeight: 600,
-                            color: '#0b4f75',
-                            fontSize: '1.1rem',
-                            mb: 1
-                          }}
-                        >
-                          {section.headline}
-                        </Typography>
-                        <List dense sx={{pt:0}}>                          {section.bulletPoints.map((point, pointIndex) => (
-                            <ListItem 
-                              key={`section-${sectionIndex}-point-${pointIndex}`} 
+                    )}                    {/* Dynamic sections from AI analysis */}
+                    {summary.sections && [...summary.sections]
+                      // Sort sections to ensure "Action Items" or "Next Steps" comes last
+                      .sort((a, b) => {
+                        const aIsAction = a.headline.toLowerCase().includes('action') || 
+                                          a.headline.toLowerCase().includes('next step') ||
+                                          a.headline.toLowerCase().includes('task');
+                        const bIsAction = b.headline.toLowerCase().includes('action') || 
+                                          b.headline.toLowerCase().includes('next step') ||
+                                          b.headline.toLowerCase().includes('task');
+                        
+                        if (aIsAction && !bIsAction) return 1; // Action items go last
+                        if (!aIsAction && bIsAction) return -1; // Non-action items go first
+                        return 0; // Keep original order for other sections
+                      })
+                      .map((section, sectionIndex) => {
+                        const isActionSection = section.headline.toLowerCase().includes('action') || 
+                                                section.headline.toLowerCase().includes('next step') ||
+                                                section.headline.toLowerCase().includes('task');
+                        
+                        // Rename action section to standardized name if it is an action section
+                        const displayHeadline = isActionSection ? "ACTION ITEMS AND NEXT STEPS" : section.headline;
+                          return (
+                          <Box key={`section-${sectionIndex}`} mb={2} onClick={(e) => e.stopPropagation()}>
+                            <Typography 
+                              variant="subtitle1" 
+                              onClick={(e) => e.stopPropagation()}
                               sx={{
-                                pl: 0,
-                                py: 0.8,
-                                transition: 'all 0.2s ease',
-                                '&:hover': {
-                                  backgroundColor: 'rgba(11, 79, 117, 0.03)',
-                                  borderRadius: '8px'
-                                }
+                                fontWeight: 600,
+                                color: '#0b4f75',
+                                fontSize: '1.1rem',
+                                mb: 1
                               }}
                             >
-                              <ListItemIcon sx={{minWidth: 32}}>
-                                {section.headline.toLowerCase().includes('action') || 
-                                 section.headline.toLowerCase().includes('next step') ||
-                                 section.headline.toLowerCase().includes('task') ? (
-                                  <InsightsIcon 
-                                    fontSize="small"
-                                    sx={{ color: '#ff7300' }}
+                              {displayHeadline}
+                            </Typography>                            <List dense sx={{pt:0}} onClick={(e) => e.stopPropagation()}>                          
+                              {section.bulletPoints.map((point, pointIndex) => (                                <ListItem 
+                                  key={`section-${sectionIndex}-point-${pointIndex}`} 
+                                  onClick={(e) => {
+                                    console.log("[Transcription] ListItem onClick prevented");
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                  }}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onMouseUp={(e) => e.stopPropagation()}
+                                  sx={{
+                                    pl: 0,
+                                    py: 0.8,
+                                    transition: 'all 0.2s ease',
+                                    '&:hover': {
+                                      backgroundColor: 'rgba(11, 79, 117, 0.03)',
+                                      borderRadius: '8px'
+                                    }
+                                  }}                                ><ListItemIcon sx={{minWidth: 32}} onClick={(e) => e.stopPropagation()}>
+                                    <span style={{ 
+                                      color: isActionSection ? '#ff7300' : '#0b4f75', 
+                                      fontSize: '1.2em',
+                                      marginLeft: '8px'
+                                    }}>•</span>
+                                  </ListItemIcon>
+                                  <ListItemText 
+                                    primary={point} 
+                                    onClick={(e) => e.stopPropagation()}
+                                    primaryTypographyProps={{
+                                      sx: {
+                                        color: '#334155',
+                                        fontSize: '0.95rem',
+                                        lineHeight: 1.5
+                                      }
+                                    }}
                                   />
-                                ) : (
-                                  <CheckCircleIcon 
-                                    fontSize="small" 
-                                    sx={{ color: '#0b4f75' }}
-                                  />
-                                )}
-                              </ListItemIcon>
-                              <ListItemText 
-                                primary={point} 
-                                primaryTypographyProps={{
-                                  sx: {
-                                    color: '#334155',
-                                    fontSize: '0.95rem',
-                                    lineHeight: 1.5
-                                  }
-                                }}
-                              />
-                            </ListItem>
-                          ))}
-                        </List>
-                      </Box>
-                    ))}
-                    
-                    {/* For backward compatibility with the old format */}
-                    {(!summary.sections || summary.sections.length === 0) && (
+                                </ListItem>
+                              ))}
+                            </List>
+                          </Box>
+                        );
+                      })
+                    }                    {/* For backward compatibility with the old format */}                    {(!summary.sections || summary.sections.length === 0) && (
                       <>
                         {summary.keyPoints && summary.keyPoints.length > 0 && (
-                          <Box mb={2}>
-                            <Typography variant="subtitle1" fontWeight="bold">Key Discussion Points</Typography>
-                            <List dense sx={{pt:0}}>
+                          <Box mb={2} onClick={(e) => e.stopPropagation()}>
+                            <Typography variant="subtitle1" fontWeight="bold" onClick={(e) => e.stopPropagation()}>Key Discussion Points</Typography>
+                            <List dense sx={{pt:0}} onClick={(e) => e.stopPropagation()}>
                               {summary.keyPoints.map((point, index) => (
-                                <ListItem key={`kp-${index}`} sx={{pl:0}}>
-                                  <ListItemIcon sx={{minWidth: 28}}>
-                                    <CheckCircleIcon fontSize="small" color="action" />
+                                <ListItem key={`kp-${index}`} sx={{pl:0}} 
+                                  onClick={(e) => {
+                                    console.log("[Transcription] Legacy ListItem onClick prevented");
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                  }}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onMouseUp={(e) => e.stopPropagation()}
+                                ><ListItemIcon sx={{minWidth: 28}}>                                    <span style={{ 
+                                      color: '#0b4f75', 
+                                      fontSize: '1.2em',
+                                      marginLeft: '8px'
+                                    }}>•</span>
                                   </ListItemIcon>
-                                  <ListItemText primary={point} />
+                                  <ListItemText primary={point} onClick={(e) => e.stopPropagation()} />
                                 </ListItem>
                               ))}
                             </List>
                           </Box>
                         )}
-                        
-                        {summary.actionItems && summary.actionItems.length > 0 && (
-                          <Box>
-                            <Typography variant="subtitle1" fontWeight="bold">Action Items</Typography>
-                            <List dense sx={{pt:0}}>
+                          {summary.actionItems && summary.actionItems.length > 0 && !summary.sections.some(s => 
+                            s.headline.toLowerCase().includes('action') || 
+                            s.headline.toLowerCase().includes('next step') || 
+                            s.headline.toLowerCase().includes('task')
+                          ) && (
+                          <Box onClick={(e) => e.stopPropagation()}>
+                            <Typography variant="subtitle1" fontWeight="bold" onClick={(e) => e.stopPropagation()}>ACTION ITEMS AND NEXT STEPS</Typography>
+                            <List dense sx={{pt:0}} onClick={(e) => e.stopPropagation()}>
                               {summary.actionItems.map((item, index) => (
-                                <ListItem key={`ai-${index}`} sx={{pl:0}}>
-                                  <ListItemIcon sx={{minWidth: 28}}>
-                                    <InsightsIcon fontSize="small" color="secondary" />
+                                <ListItem key={`ai-${index}`} sx={{pl:0}} 
+                                  onClick={(e) => {
+                                    console.log("[Transcription] Action item ListItem onClick prevented");
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                  }}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onMouseUp={(e) => e.stopPropagation()}
+                                >
+                                  <ListItemIcon sx={{minWidth: 28}} onClick={(e) => e.stopPropagation()}>
+                                    <span style={{ 
+                                      color: '#ff7300', 
+                                      fontSize: '1.2em',
+                                      marginLeft: '8px'
+                                    }}>•</span>
                                   </ListItemIcon>
-                                  <ListItemText primary={item} />
+                                  <ListItemText primary={item} onClick={(e) => e.stopPropagation()} />
                                 </ListItem>
                               ))}
                             </List>
@@ -1176,10 +1444,20 @@ const Transcription = () => {
                       </>
                     )}
                 </CardContent>
-            </Card>            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-                <Button 
+            </Card>            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }} onClick={(e) => {
+              console.log("[Transcription] Export button container onClick prevented");
+              e.stopPropagation();
+              e.preventDefault();
+            }}>                <Button 
                   variant="outlined" 
-                  startIcon={<InsightsIcon />} 
+                  startIcon={<InsightsIcon />}
+                  onClick={(e) => {
+                    console.log("[Transcription] Export summary button clicked");
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // TODO: Add export logic here
+                    console.log('Export Summary clicked');
+                  }} 
                   sx={{ 
                     borderRadius: '24px',
                     borderColor: '#0b4f75',
@@ -1201,8 +1479,7 @@ const Transcription = () => {
                   Export Summary
                 </Button>
             </Box>
-         </Box>        ) : (
-          <Box 
+         </Box>        ) : (          <Box 
             sx={{ 
               display: 'flex', 
               flexDirection: 'column', 
@@ -1211,24 +1488,37 @@ const Transcription = () => {
               height: '100%',
               padding: 4
             }}
+            onClick={(e) => {
+              console.log("[Transcription] Empty state box onClick prevented");
+              e.stopPropagation();
+              e.preventDefault();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseUp={(e) => e.stopPropagation()}
           > 
             <EmptyState 
               type="summary" 
               hasTranscript={Boolean(rawTranscript && rawTranscript.length > 30)}
               buttonText={isProcessing ? 'Generating...' : 'Generate Summary'}
-              onButtonClick={generateSummary}
+              onButtonClick={(e) => {
+                console.log("[Transcription] Generate summary button clicked");
+                e.preventDefault();
+                e.stopPropagation();
+                generateSummary();
+              }}
               buttonDisabled={!rawTranscript || isProcessing}
               buttonIcon={isProcessing ? <CircularProgress size={20} color="inherit" /> : <SummarizeIcon />}
             />
           </Box>
-        )}
-      </TabPanel>      {/* Snackbar for notifications */}
-      <EnhancedNotifications
-        open={snackbarOpen}
-        message={snackbarMessage}
-        severity="success"
-        onClose={handleSnackbarClose}
-        position={{ vertical: 'bottom', horizontal: 'center' }}
+        )}      </TabPanel>      
+      
+      {/* Enhanced Notifications */}      <EnhancedNotifications
+        error={error}
+        setError={setError}
+        isProcessing={isProcessing}
+        snackbarOpen={snackbarOpen}
+        snackbarMessage={snackbarMessage}
+        handleSnackbarClose={handleSnackbarClose}
       />
     </Box>
   );

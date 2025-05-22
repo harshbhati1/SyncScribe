@@ -58,19 +58,38 @@ const EnhancedNotifications = ({
   handleSnackbarClose 
 }) => {
   return (
-    <>
-      {error && (
+    <>      {error && (
         <Alert 
           severity="error" 
-          sx={{ m: 2, flexShrink: 0 }} 
+          sx={{ 
+            position: 'fixed', 
+            top: isProcessing ? '140px' : '80px', // Position below processing alert if it's showing
+            left: '50%', 
+            transform: 'translateX(-50%)', 
+            zIndex: 9998, // Just below the processing alert
+            minWidth: '350px',
+            maxWidth: '90%',
+            boxShadow: '0 8px 24px rgba(244, 67, 54, 0.15)'
+          }} 
           onClose={() => setError('')}
         >
           {error}
         </Alert>
       )}
-      
-      {isProcessing && (
-        <Alert severity="info" sx={{ m: 2, flexShrink: 0 }}>
+        {isProcessing && (
+        <Alert 
+          severity="info" 
+          sx={{ 
+            position: 'fixed', 
+            top: '80px', 
+            left: '50%', 
+            transform: 'translateX(-50%)', 
+            zIndex: 9999,
+            minWidth: '350px',
+            maxWidth: '90%',
+            boxShadow: '0 8px 24px rgba(11, 79, 117, 0.15)'
+          }}
+        >
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <CircularProgress 
               size={20} 
@@ -93,14 +112,12 @@ const EnhancedNotifications = ({
             </Typography>
           </Box>
         </Alert>
-      )}
-
-      <Snackbar
-        open={snackbarOpen}
+      )}<Snackbar
+        open={false} // Changed from snackbarOpen to false to hide the success notifications
         autoHideDuration={5000}
         onClose={handleSnackbarClose}
         message={snackbarMessage}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }} // Changed from bottom to top
         sx={{
           '& .MuiSnackbarContent-root': {
             bgcolor: '#10b981', // Success green
@@ -110,9 +127,9 @@ const EnhancedNotifications = ({
             boxShadow: '0 10px 25px rgba(16, 185, 129, 0.25)',
             py: 1.2,
             border: '1px solid rgba(16, 185, 129, 0.3)',
-            animation: 'slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-            '@keyframes slideUp': {
-              '0%': { transform: 'translateY(20px)', opacity: 0 },
+            animation: 'slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1)', // Changed animation name
+            '@keyframes slideDown': { // Changed animation name and directions
+              '0%': { transform: 'translateY(-20px)', opacity: 0 },
               '100%': { transform: 'translateY(0)', opacity: 1 }
             }
           }

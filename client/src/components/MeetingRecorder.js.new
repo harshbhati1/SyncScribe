@@ -1,3 +1,4 @@
+// filepath: c:\Users\harsh\OneDrive\Desktop\TwinMind\client\src\components\MeetingRecorder.js
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Box, Typography, Button, CircularProgress } from '@mui/material';
 import { styled } from '@mui/material/styles';
@@ -102,7 +103,11 @@ function writeString(view, offset, string) {
 }
 
 
+// Static flag to prevent automatic initialization
+let hasInitializedRecording = false;
+
 const MeetingRecorder = ({ onTranscriptionUpdate }) => {
+  // Initialize recording to false on component mount
   const [recording, setRecording] = useState(false);
   const [isProcessingAudio, setIsProcessingAudio] = useState(false); 
   const [isFinalizing, setIsFinalizing] = useState(false); // True only when the *final* chunk is processing after stop
@@ -118,7 +123,7 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
   const chunkIntervalIdRef = useRef(null);
   const displayTimerIntervalRef = useRef(null);
   const CHUNK_DURATION = 30000; 
-  const TARGET_SAMPLE_RATE = 16000; 
+  const TARGET_SAMPLE_RATE = 16000;
 
   const recordingRef = useRef(recording);
   useEffect(() => { recordingRef.current = recording; }, [recording]);
@@ -227,7 +232,9 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
     }
   }, []); 
 
+  // Handle initializing the visualizer on mount and when recording changes
   useEffect(() => { 
+    // Only initialize audio visualization if explicitly recording
     if (recordingRef.current && mediaStreamSourceNodeRef.current && audioContextRef.current && audioContextRef.current.state === 'running') {
       if (!analyserNodeRef.current && canvasRef.current) {
         initializeAudioVisualizer(audioContextRef.current, mediaStreamSourceNodeRef.current).then(success => {
@@ -253,6 +260,17 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
       if (visualizerAnimationRef.current) cancelAnimationFrame(visualizerAnimationRef.current);
     };
   }, [recording, initializeAudioVisualizer, drawVisualization]); 
+
+  // Add a component initialization effect that ensures we're not auto-recording
+  useEffect(() => {
+    // Ensure recording is false on component mount and cleanup on unmount
+    console.log('[Recorder] Component mounted, recording initialized to false');
+    return () => {
+      // Cleanup any resources when component unmounts
+      cleanupAudioProcessing(true);
+      console.log('[Recorder] Component unmounted, cleaning up resources');
+    };
+  }, []);
 
   const processAudioChunkRef = useRef(null);
   const handleStopOverallRecordingRef = useRef(null);
@@ -399,14 +417,18 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
 
   }, [TARGET_SAMPLE_RATE, onTranscriptionUpdate]); 
 
-
   const handleStartOverallRecording = useCallback(async () => {
-    console.log('[Recorder] User clicked Start Recording.');    setError('');
+    console.log('[Recorder] User clicked Start Recording.');
+    setError('');
     setDisplayTime(0);
     setIsFinalizing(false); // Ensure finalizing is false when starting
-    // No longer reset previous transcription - allow it to accumulate
+    if (onTranscriptionUpdate) onTranscriptionUpdate('', { type: 'reset' });
+
+    // Ensure we clean up any previous recording resources
+    cleanupAudioProcessing(true); 
     
-    cleanupAudioProcessing(true);
+    // Set the flag to indicate the user has explicitly started recording
+    hasInitializedRecording = true;
 
     const stream = await requestMicrophonePermission();
     if (!stream) return;
@@ -465,6 +487,7 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
       setRecording(false);
     }
   }, [onTranscriptionUpdate, initializeAudioVisualizer, cleanupAudioProcessing, CHUNK_DURATION, TARGET_SAMPLE_RATE, encodeAndSendCurrentAudio]);
+
   const internalHandleStopOverallRecording = useCallback(async () => {
     console.log('[Recorder] User clicked Stop Recording.');
     setRecording(false); 
@@ -484,45 +507,19 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
     
     setDisplayTime(0); 
     // setIsFinalizing(false) will be handled by internalProcessAudioChunk's finally block
-    
-    // Notify parent that recording has stopped and transcript should be auto-saved
-    // We'll use a 'stopped' event type with an empty text
-    if (onTranscriptionUpdate) {
-      setTimeout(() => {
-        onTranscriptionUpdate("", {
-          type: 'recording_stopped',
-          isFinal: true,
-          shouldSave: true,
-          timestamp: new Date().toISOString()
-        });
-      }, 2000); // Small delay to ensure final chunk is processed
-    }
-  }, [encodeAndSendCurrentAudio, cleanupAudioProcessing, onTranscriptionUpdate]);
+  }, [encodeAndSendCurrentAudio, cleanupAudioProcessing]);
 
   useEffect(() => { processAudioChunkRef.current = internalProcessAudioChunk; }, [internalProcessAudioChunk]);
   useEffect(() => { handleStopOverallRecordingRef.current = internalHandleStopOverallRecording; }, [internalHandleStopOverallRecording]);
 
+
   return (
-    <Box 
-      sx={{ mb: 4, p:2, border: '1px solid #ddd', borderRadius: '8px', backgroundColor: '#f9f9f9' }}
-      onClick={(e) => {
-        // Make sure clicks inside the recorder component don't bubble up
-        e.stopPropagation();
-      }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2, gap: 2 }}>        <ActionButton
+    <Box sx={{ mb: 4, p:2, border: '1px solid #ddd', borderRadius: '8px', backgroundColor: '#f9f9f9' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2, gap: 2 }}>
+        <ActionButton
           variant={recording ? "outlined" : "contained"}
           color={recording ? "error" : "primary"}
-          onClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            console.log('[Recorder] Action button clicked, recording:', recording);
-            if (recording) {
-              handleStopOverallRecordingRef.current();
-            } else {
-              handleStartOverallRecording();
-            }
-          }}
+          onClick={recording ? handleStopOverallRecordingRef.current : handleStartOverallRecording}
           disabled={!recording && isFinalizing} // Disable "Start Recording" if previous session is still finalizing
           startIcon={
             isFinalizing ? <CircularProgress size={20} color="inherit" titleaccess="Finalizing..." /> :

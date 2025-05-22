@@ -6,6 +6,9 @@
 const { admin } = require('../config/firebase.config'); // Assuming admin is correctly exported after initialization
 const { getErrorResponse } = require('../utils/error.utils'); // Your error response utility
 
+// Verify the error utility is properly imported
+console.log('[Auth Middleware] Error utility imported:', typeof getErrorResponse === 'function' ? 'Success' : 'Failed');
+
 // Check if Firebase Admin was initialized
 // Note: It's often better to ensure 'admin' itself is only available/exported
 // after successful initialization in firebase.config.js, but this check is a safeguard.

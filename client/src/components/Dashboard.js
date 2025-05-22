@@ -704,13 +704,22 @@ const Dashboard = () => {
                         width: '100%',
                         mb: 0.5,
                       }}
-                    >
-                      <NavItem 
-                        onClick={() => {
+                    >                      <NavItem 
+                        onClick={(e) => {
+                          // Prevent event propagation
+                          e.preventDefault();
+                          e.stopPropagation();
+                          
                           // Store meeting info in localStorage before navigating
                           localStorage.setItem('currentMeetingTitle', fav.title);
                           localStorage.setItem('currentMeetingId', fav.id);
+                          
+                          // Log navigation for debugging
+                          console.log(`[Dashboard] Navigating to meeting: ${fav.id}, title: ${fav.title}`);
+                          
+                          // Navigate to the meeting
                           navigate(`/transcription/${fav.id}`);
+                          
                           if (window.innerWidth < 960) {
                             toggleSidebar(); // Close sidebar on mobile after selection
                           }
@@ -803,13 +812,22 @@ const Dashboard = () => {
                             width: '100%',
                             mb: 0.5,
                           }}
-                        >
-                          <NavItem 
-                            onClick={() => {
+                        >                          <NavItem 
+                            onClick={(e) => {
+                              // Prevent event propagation
+                              e.preventDefault();
+                              e.stopPropagation();
+                              
                               // Store meeting info in localStorage before navigating
                               localStorage.setItem('currentMeetingTitle', meeting.title);
                               localStorage.setItem('currentMeetingId', meeting.id);
+                              
+                              // Log navigation for debugging
+                              console.log(`[Dashboard] Navigating to meeting: ${meeting.id}, title: ${meeting.title}`);
+                              
+                              // Navigate to the meeting
                               navigate(`/transcription/${meeting.id}`);
+                              
                               if (window.innerWidth < 960) {
                                 toggleSidebar(); // Close sidebar on mobile after selection
                               }

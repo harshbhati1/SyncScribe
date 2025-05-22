@@ -12,10 +12,13 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
  * Creates consistent styling for user and AI messages
  */
 const MessageBubble = ({ message, cleanMarkdownFormatting }) => {
-  return (
-    <ListItem
+  return (    <ListItem
       key={message.id}
       alignItems="flex-start"
+      onClick={(e) => {
+        // Prevent event bubbling from message bubbles
+        e.stopPropagation();
+      }}
       sx={{
         flexDirection: message.sender === 'user' ? 'row-reverse' : 'row',
         px: 0, 

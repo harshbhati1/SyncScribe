@@ -42,6 +42,7 @@ router.post('/generate', authMiddleware, async (req, res) => {
       error: 'Failed to initialize AI service for summary generation'
     });
   }
+
   try {
     const summaryPrompt = `You are an expert meeting analyst for the TwinMind application.
     
@@ -88,7 +89,7 @@ SUMMARY: [Brief 2-3 sentence overall summary]
 - [Analytical bullet point]
 ...
 
-ACTION ITEMS AND NEXT STEPS:
+[DYNAMICALLY CREATED SECTION HEADLINE for action items]:
 - [Action item with responsible person and timeline if mentioned]
 - [Action item with responsible person and timeline if mentioned]
 ...
@@ -97,11 +98,9 @@ ACTION ITEMS AND NEXT STEPS:
 
 Be specific and extract information directly from the transcript. If certain information cannot be determined, note this in your response.
 
-IMPORTANT: 
-1. Make sure each bullet point starts with a dash (-) character and each section headline is followed by a colon (:). 
-2. DO NOT use markdown formatting. 
-3. DO NOT create multiple sections for action items - use exactly ONE section titled "ACTION ITEMS AND NEXT STEPS".
-4. Maintain consistent formatting throughout.`;    const geminiResult = await geminiPro.generateContent({
+IMPORTANT: Make sure each bullet point starts with a dash (-) character and each section headline is followed by a colon (:). DO NOT use markdown formatting. Maintain consistent formatting throughout.`;
+
+    const geminiResult = await geminiPro.generateContent({
       contents: [{ role: 'user', parts: [{ text: summaryPrompt }] }],
       generationConfig: {
         temperature: 0.3,
@@ -135,6 +134,7 @@ IMPORTANT:
       success: true, 
       summary
     });
+
   } catch (error) {
     console.error('[POST /api/summary/generate] Error generating summary:', error.message);
     return res.status(500).json({ 
@@ -183,6 +183,7 @@ function parseSummaryResponse(text) {
         }
       }
     }
+
     // Extract all dynamic sections (heading followed by bullet points)
     // This regex finds all sections with a headline followed by bullet points
     const sectionRegex = /\n([A-Z][^:\n]*):?\s*\n((?:\s*[-•*]\s*[^\n]*\n?)+)/g;
@@ -254,42 +255,19 @@ function parseSummaryResponse(text) {
           bulletPoints: currentBullets
         });
       }
-    }      // Special handling for action items - identify and combine all action item sections
-    // Look for all sections that contain keywords related to action items
-    const actionItemSections = summary.sections.filter(section => 
+    }
+    
+    // Special handling for action items - we want to identify the action items section
+    // by looking for keywords in the section headline
+    const actionItemsSection = summary.sections.find(section => 
       section.headline.toLowerCase().includes('action') || 
       section.headline.toLowerCase().includes('next step') ||
       section.headline.toLowerCase().includes('task') ||
       section.headline.toLowerCase().includes('follow up')
     );
     
-    if (actionItemSections.length > 0) {
-      // Combine all action items from all matching sections
-      summary.actionItems = actionItemSections.flatMap(section => section.bulletPoints);
-      
-      // Remove all but the first action item section from the sections array
-      // to prevent duplication in the UI
-      const firstActionItemSectionIndex = summary.sections.findIndex(section => 
-        section.headline.toLowerCase().includes('action') || 
-        section.headline.toLowerCase().includes('next step') ||
-        section.headline.toLowerCase().includes('task') ||
-        section.headline.toLowerCase().includes('follow up')
-      );
-      
-      if (firstActionItemSectionIndex !== -1) {
-        // Keep only the first action item section and update it with all combined bullet points
-        summary.sections[firstActionItemSectionIndex].bulletPoints = summary.actionItems;
-        summary.sections[firstActionItemSectionIndex].headline = "ACTION ITEMS AND NEXT STEPS";
-        
-        // Remove all other action item sections
-        summary.sections = summary.sections.filter((section, index) => 
-          index === firstActionItemSectionIndex || 
-          !(section.headline.toLowerCase().includes('action') || 
-            section.headline.toLowerCase().includes('next step') ||
-            section.headline.toLowerCase().includes('task') ||
-            section.headline.toLowerCase().includes('follow up'))
-        );
-      }
+    if (actionItemsSection) {
+      summary.actionItems = actionItemsSection.bulletPoints;
     } else {
       summary.actionItems = [];
     }
@@ -332,6 +310,7 @@ function parseSummaryResponse(text) {
     if (summary.actionItems.length === 0) {
       summary.actionItems = ["No specific action items were identified in the transcript."];
     }
+
   } catch (error) {
     console.error('[parseSummaryResponse] Error parsing summary:', error);
     // Return a basic structure if parsing fails

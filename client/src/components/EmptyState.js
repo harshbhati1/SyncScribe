@@ -17,7 +17,9 @@ const EmptyState = ({
   type = 'transcript', // 'transcript', 'chat', 'summary'
   hasTranscript = false,
   onButtonClick = null,
-  buttonText = 'Get Started'
+  buttonText = 'Get Started',
+  buttonDisabled = false,
+  buttonIcon = null
 }) => {
   const theme = useTheme();
   
@@ -56,8 +58,7 @@ const EmptyState = ({
   
   const currentConfig = config[type];
   
-  return (
-    <Box 
+  return (    <Box 
       sx={{ 
         display: 'flex', 
         flexDirection: 'column', 
@@ -71,6 +72,7 @@ const EmptyState = ({
           '100%': { opacity: 1 }
         }
       }}
+      onClick={(e) => e.stopPropagation()}
     >
       <Box
         sx={{
@@ -120,11 +122,16 @@ const EmptyState = ({
       >
         {currentConfig.description}
       </Typography>
-      
-      {onButtonClick && (
+        {onButtonClick && (
         <Button 
           variant="contained" 
-          onClick={onButtonClick}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onButtonClick(e);
+          }}
+          disabled={buttonDisabled}
+          startIcon={buttonIcon}
           sx={{ 
             mt: 2, 
             borderRadius: '24px',
