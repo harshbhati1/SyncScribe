@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../services/api';
 import { useNavigate } from 'react-router-dom';
+import GoogleCalendarView from './GoogleCalendarView';
 import {
   Box,
   Typography,
@@ -600,6 +601,19 @@ const Dashboard = () => {
     }
   };
   
+  // Effect to check for URL tab parameter (for calendar redirects)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tabParam = urlParams.get('tab');
+    
+    if (tabParam === 'calendar') {
+      setTabValue(1); // Switch to Calendar tab (index 1)
+      
+      // Clear the URL parameter after handling
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   return (
     <Box sx={{ flexGrow: 1, bgcolor: 'background.default', minHeight: '100vh', display: 'flex' }}>      {/* Left Sidebar - ChatGPT Style - Now always overlays content */}
       <Drawer
@@ -1044,11 +1058,9 @@ const Dashboard = () => {
             </Box>
           </Box>
         </TabPanel>
-        
-        <TabPanel hidden={tabValue !== 1} value={tabValue} index={1}>
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
-            <Typography color="text.secondary">Calendar view will be implemented soon</Typography>
-          </Box>
+          <TabPanel hidden={tabValue !== 1} value={tabValue} index={1}>
+          {/* Google Calendar Component */}
+          <GoogleCalendarView />
         </TabPanel>
       </Box>
       

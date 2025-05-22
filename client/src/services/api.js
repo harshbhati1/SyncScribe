@@ -349,7 +349,6 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
   deleteMeeting: (meetingId) => apiRequest(`/transcription/meeting/${meetingId}`, {
     method: 'DELETE'
   }),
-  
   // Method to generate a meeting summary
   generateSummary: (transcript, meetingId) => apiRequest('/summary/generate', {
     method: 'POST',
@@ -357,7 +356,30 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
       transcript,
       meetingId
     })
-  })
+  }),
+
+  // Calendar Integration Methods
+  getCalendarAuthUrl: () => {
+    console.log('API: Requesting calendar auth URL');
+    return apiRequest('/calendar/auth-url', {
+      method: 'GET'
+    });
+  },
+  
+  exchangeCalendarCode: (code) => {
+    console.log('API: Exchanging authorization code, length:', code.length);
+    return apiRequest('/calendar/exchange-code', {
+      method: 'POST',
+      body: JSON.stringify({ code })
+    });
+  },
+  
+  getCalendarEvents: (accessToken, date) => {
+    console.log('API: Getting calendar events for date:', date);
+    return apiRequest(`/calendar/events?accessToken=${encodeURIComponent(accessToken)}&date=${encodeURIComponent(date)}`, {
+      method: 'GET'
+    });
+  }
 };
 
 // Export for general use

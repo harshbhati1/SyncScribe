@@ -5,6 +5,7 @@ import PrivateRoute from './components/PrivateRoute';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import Transcription from './components/Transcription';
+import CalendarCallback from './components/CalendarCallback';
 import './App.css';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -106,10 +107,15 @@ function App() {
                 <Dashboard />
               </PrivateRoute>
             } />
-            
-            <Route path="/transcription/:meetingId?" element={
+              <Route path="/transcription/:meetingId?" element={
               <PrivateRoute>
                 <Transcription />
+              </PrivateRoute>
+            } />
+            
+            <Route path="/calendar/callback" element={
+              <PrivateRoute>
+                <CalendarCallback />
               </PrivateRoute>
             } />
             

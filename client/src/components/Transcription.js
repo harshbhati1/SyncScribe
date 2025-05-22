@@ -851,18 +851,16 @@ const Transcription = () => {
                 console.log(`[Transcription] Switching to chat tab with ${chatHistory.length} messages`);
                 setTabValue(1);
               }, 300);
-            }// Handle summary data with proper logging
+            }            // Handle summary data with proper logging
             try {
               if (meetingData.summary) {
                 console.log(`[Transcription] Loaded summary for meeting ${meetingId}`);
                 setSummary(meetingData.summary);
                 
-                // If we have a summary and no chat messages, show the summary tab
-                if (!chatHistory.length) {
-                  console.log('[Transcription] Found summary data, will set to summary tab');
-                  // Set tab after a short delay to ensure UI is ready
-                  setTimeout(() => setTabValue(2), 300);
-                }
+                // For existing meetings, always prioritize showing the summary tab if available
+                console.log('[Transcription] Found summary data for existing meeting, setting to summary tab');
+                // Set tab after a short delay to ensure UI is ready
+                setTimeout(() => setTabValue(2), 300);
               } else {
                 console.log(`[Transcription] No summary found for meeting ${meetingId}`);
                 setSummary(null);
@@ -1174,8 +1172,9 @@ const Transcription = () => {
                 variant="outlined" 
                 sx={{ 
                   p: 3, 
-                  minHeight: '200px', 
-                  maxHeight: 'calc(100vh - 400px)', 
+                  minHeight: isExistingMeeting ? 'calc(100vh - 220px)' : '200px', 
+                  maxHeight: isExistingMeeting ? 'calc(100vh - 220px)' : 'calc(100vh - 400px)', 
+                  height: isExistingMeeting ? 'calc(100vh - 220px)' : 'auto',
                   overflowY: 'auto', 
                   backgroundColor: '#f8fafc',
                   borderRadius: '16px',
