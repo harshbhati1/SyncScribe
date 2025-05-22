@@ -19,16 +19,18 @@ const EmptyState = ({
   onButtonClick = null,
   buttonText = 'Get Started',
   buttonDisabled = false,
-  buttonIcon = null
+  buttonIcon = null,
+  hideButton = false // New prop to hide the button completely
 }) => {
   const theme = useTheme();
-  
   // Configuration for different empty states
   const config = {
     transcript: {
       icon: <ArticleIcon sx={{ fontSize: 48, color: '#0b4f75', opacity: 0.7 }} />,
-      title: 'Start recording to get started',
-      description: 'Your live transcript will appear here as you speak.',
+      title: hideButton ? 'Meeting Transcript' : 'Start recording to get started',
+      description: hideButton 
+        ? 'This is a saved meeting transcript view. Recording is not available for past meetings.'
+        : 'Your live transcript will appear here as you speak.',
       bgGradient: 'linear-gradient(135deg, rgba(11, 79, 117, 0.08) 0%, rgba(255, 115, 0, 0.08) 100%)'
     },
     chat: {
@@ -40,7 +42,9 @@ const EmptyState = ({
         : 'No transcript available',
       description: hasTranscript
         ? 'Ask questions about your meeting transcript. I can help summarize key points, extract action items, or clarify details.'
-        : 'Record or load a meeting first to chat about it.',
+        : hideButton 
+          ? 'This meeting has no transcript content available to chat about.'
+          : 'Record or load a meeting first to chat about it.',
       bgGradient: hasTranscript
         ? 'rgba(255, 115, 0, 0.1)'
         : 'rgba(11, 79, 117, 0.08)',
@@ -51,7 +55,9 @@ const EmptyState = ({
     summary: {
       icon: <SummarizeIcon sx={{ fontSize: 48, color: '#0b4f75', opacity: 0.7 }} />,
       title: 'No summary available yet',
-      description: 'Generate a summary to get key insights, action items, and highlights from your meeting transcript.',
+      description: hideButton 
+        ? 'This meeting has no summary. Summaries can only be generated during an active meeting session.'
+        : 'Generate a summary to get key insights, action items, and highlights from your meeting transcript.',
       bgGradient: 'linear-gradient(135deg, rgba(11, 79, 117, 0.08) 0%, rgba(255, 115, 0, 0.08) 100%)'
     }
   };
@@ -121,8 +127,7 @@ const EmptyState = ({
         }}
       >
         {currentConfig.description}
-      </Typography>
-        {onButtonClick && (
+      </Typography>        {onButtonClick && !hideButton && (
         <Button 
           variant="contained" 
           onClick={(e) => {

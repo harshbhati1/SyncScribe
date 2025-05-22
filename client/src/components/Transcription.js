@@ -134,6 +134,7 @@ const Transcription = () => {
   const [animatedDisplayedTranscript, setAnimatedDisplayedTranscript] = useState(''); // Renamed but now just holds the transcript directly
   const [transcriptionSegments, setTranscriptionSegments] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false); // General processing for save/summary
+  const [isExistingMeeting, setIsExistingMeeting] = useState(false); // Track if this is a previously saved meeting
   const [error, setError] = useState('');
   const [meetingTitle, setMeetingTitle] = useState(() => localStorage.getItem('currentMeetingTitle') || 'New Meeting');
   const [editingTitle, setEditingTitle] = useState(false);
@@ -224,7 +225,11 @@ const Transcription = () => {
     }
   }, [meetingId]);
   // Title editing handlers
-  const handleTitleClick = () => { setNewTitle(meetingTitle); setEditingTitle(true); };
+  const handleTitleClick = () => { 
+    if (isExistingMeeting) return; // Don't allow editing title for existing meetings
+    setNewTitle(meetingTitle); 
+    setEditingTitle(true); 
+  };
   const handleTitleChangeInput = (e) => setNewTitle(e.target.value);
   const handleTitleSave = async () => {
     if (newTitle.trim()) {
@@ -344,6 +349,13 @@ const Transcription = () => {
   
   // Generate summary function
   const generateSummary = useCallback(async () => {
+    // If this is an existing meeting, don't allow generating a new summary
+    if (isExistingMeeting) {
+      console.log("Cannot generate summary for existing meetings");
+      setError("Summary generation is not available for saved meetings.");
+      return;
+    }
+
     if (!rawTranscript) {
       setError("No transcript available to summarize.");
       return;
@@ -773,11 +785,14 @@ const Transcription = () => {
         setIsProcessing(true);
         setError(''); // Clear previous errors
         setHasAutoSwitchedToChat(false); // Reset flag when loading a new meeting
-        console.log(`[Transcription] Loading meeting data for meetingId: ${meetingId}`);
-        try {
+        console.log(`[Transcription] Loading meeting data for meetingId: ${meetingId}`);        try {
           const response = await transcriptionAPI.getMeeting(meetingId);
           if (response && response.data && response.data.success) {
             const meetingData = response.data.data;
+            
+            // Mark this as an existing meeting that has been saved before
+            setIsExistingMeeting(true);
+            console.log('[Transcription] Loaded an existing meeting, disabling recording capability');
             
             // Set title and mark if it's not a default title
             const title = meetingData.title || `Meeting ${meetingId}`;
@@ -888,9 +903,10 @@ const Transcription = () => {
             setSummary(null);
         } finally {
             setIsProcessing(false);
-        }
-      } else {
+        }      } else {
         // No meetingId, treat as a new meeting - initialize with empty state but don't reset
+        setIsExistingMeeting(false); // This is a new meeting, enable recording capability
+        console.log('[Transcription] Created a new meeting, enabling recording capability');
         setRawTranscript('');
         setAnimatedDisplayedTranscript('');
         setTranscriptionSegments([]);
@@ -1026,9 +1042,37 @@ const Transcription = () => {
                   ),
                 }}
               />
-            ) : (
-              <EditableTitle variant="h6" component="div" noWrap onClick={handleTitleClick} sx={{ flexGrow: 1 }}>
+            ) : (              <EditableTitle 
+                variant="h6" 
+                component="div" 
+                noWrap 
+                onClick={isExistingMeeting ? null : handleTitleClick} 
+                sx={{ 
+                  flexGrow: 1, 
+                  cursor: isExistingMeeting ? 'default' : 'pointer',
+                  '&:hover': {
+                    backgroundColor: isExistingMeeting ? 'transparent' : 'rgba(11, 79, 117, 0.08)',
+                    transform: isExistingMeeting ? 'none' : 'translateY(-1px)',
+                  }
+                }}
+              >
                 {meetingTitle}
+                {isExistingMeeting && (
+                  <Typography 
+                    variant="caption" 
+                    component="span" 
+                    sx={{ 
+                      ml: 1, 
+                      color: '#64748b', 
+                      backgroundColor: 'rgba(11, 79, 117, 0.08)',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      fontSize: '0.7rem'
+                    }}
+                  >
+                    Saved Meeting
+                  </Typography>
+                )}
               </EditableTitle>
             )}
             {isRecordingLocal && (
@@ -1080,11 +1124,10 @@ const Transcription = () => {
               borderRadius: '2px',
               transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
             }
-          }}
-        >          <Tab 
+          }}        >          <Tab 
             icon={<ArticleIcon fontSize="small" />} 
             iconPosition="start" 
-            label="Transcript" 
+            label={isExistingMeeting ? "View Transcript" : "Transcript"} 
             onClick={(e) => {
               // Handle tab clicks directly to ensure proper event handling
               e.stopPropagation();
@@ -1102,29 +1145,31 @@ const Transcription = () => {
           <Tab 
             icon={<SummarizeIcon fontSize="small" />} 
             iconPosition="start" 
-            label="Summary" 
+            label={isExistingMeeting && summary ? "View Summary" : "Summary"}
             onClick={(e) => {
               // Handle tab clicks directly to ensure proper event handling
               console.log("[Transcription] Summary tab clicked directly");
               e.stopPropagation();
             }}
           /></Tabs>
-      </StyledAppBar>
-
-      {/* Transcript Tab */}
+      </StyledAppBar>      {/* Transcript Tab */}
       <TabPanel hidden={tabValue !== 0} value={tabValue} index={0}>
-        <MeetingRecorder onTranscriptionUpdate={handleMeetingRecorderUpdate} />
+        {!isExistingMeeting && (
+          <MeetingRecorder onTranscriptionUpdate={handleMeetingRecorderUpdate} />
+        )}
         <Box sx={{ mt: 2 }}>
           {(rawTranscript || animatedDisplayedTranscript || isRecordingLocal) ? ( // Show controls if there's any activity
             <>              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
-                <IconButton 
-                  color="primary" 
-                  onClick={saveTranscription} 
-                  disabled={isProcessing || !rawTranscript} 
-                  title="Save Meeting"
-                >
-                  <SaveIcon fontSize="small" />
-                </IconButton>
+                {!isExistingMeeting && (
+                  <IconButton 
+                    color="primary" 
+                    onClick={saveTranscription} 
+                    disabled={isProcessing || !rawTranscript} 
+                    title="Save Meeting"
+                  >
+                    <SaveIcon fontSize="small" />
+                  </IconButton>
+                )}
               </Box><Paper 
                 variant="outlined" 
                 sx={{ 
@@ -1147,14 +1192,15 @@ const Transcription = () => {
                     color: '#334155' 
                   }}
                 >
-                  {animatedDisplayedTranscript || ( (isRecordingLocal || (typeof MeetingRecorder !== 'undefined' && MeetingRecorder.isRecording)) && !rawTranscript ? "Listening..." : "Start recording to see transcript...")}
-                </Typography>
+                  {animatedDisplayedTranscript || ( (isRecordingLocal || (typeof MeetingRecorder !== 'undefined' && MeetingRecorder.isRecording)) && !rawTranscript ? "Listening..." : "Start recording to see transcript...")}                </Typography>
               </Paper>
-              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-                <ActionButton variant="contained" color="primary" startIcon={<SummarizeIcon />} onClick={generateSummary} disabled={isProcessing || !rawTranscript}>
-                  Generate Summary
-                </ActionButton>
-              </Box>
+              {!isExistingMeeting && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                  <ActionButton variant="contained" color="primary" startIcon={<SummarizeIcon />} onClick={generateSummary} disabled={isProcessing || !rawTranscript}>
+                    Generate Summary
+                  </ActionButton>
+                </Box>
+              )}
             </>
           ) : ( 
             <Box 
@@ -1164,10 +1210,12 @@ const Transcription = () => {
                 alignItems: 'center', 
                 justifyContent: 'center', 
                 height: 'calc(100% - 40px)', /* Adjust if MeetingRecorder has fixed height */
-                padding: 4
-              }}
+                padding: 4              }}
             > 
-              <EmptyState type="transcript" />
+              <EmptyState 
+                type="transcript" 
+                hideButton={isExistingMeeting}
+              />
             </Box>
           )}
         </Box>
@@ -1195,12 +1243,12 @@ const Transcription = () => {
                 ))}
                 <div ref={chatEndRef} />
               </List>
-            </Paper>
-            ) : (
+            </Paper>            ) : (
               rawTranscript ? (
                 <EmptyState 
                   type="chat"
                   hasTranscript={Boolean(rawTranscript && rawTranscript.length > 30)}
+                  hideButton={isExistingMeeting}
                 />
               ) : (
                 <EmptyState 
@@ -1208,6 +1256,7 @@ const Transcription = () => {
                   hasTranscript={false}
                   buttonText="Go to Recording"
                   onButtonClick={() => setTabValue(0)}
+                  hideButton={isExistingMeeting}
                 />
               )
             )}
@@ -1495,8 +1544,7 @@ const Transcription = () => {
             }}
             onMouseDown={(e) => e.stopPropagation()}
             onMouseUp={(e) => e.stopPropagation()}
-          > 
-            <EmptyState 
+          >            <EmptyState 
               type="summary" 
               hasTranscript={Boolean(rawTranscript && rawTranscript.length > 30)}
               buttonText={isProcessing ? 'Generating...' : 'Generate Summary'}
@@ -1506,8 +1554,9 @@ const Transcription = () => {
                 e.stopPropagation();
                 generateSummary();
               }}
-              buttonDisabled={!rawTranscript || isProcessing}
+              buttonDisabled={!rawTranscript || isProcessing || isExistingMeeting}
               buttonIcon={isProcessing ? <CircularProgress size={20} color="inherit" /> : <SummarizeIcon />}
+              hideButton={isExistingMeeting}
             />
           </Box>
         )}      </TabPanel>      
