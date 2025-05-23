@@ -88,17 +88,56 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { signInWithGoogle } = useAuth();
-  const navigate = useNavigate();
-
-  const handleGoogleSignIn = async () => {
+  const navigate = useNavigate();  const handleGoogleSignIn = async () => {
     try {
       setError('');
       setLoading(true);
-      await signInWithGoogle();
-      // Redirect to dashboard after successful login
-      navigate('/dashboard');
+      
+      console.log('[Login] Starting Google sign-in process');
+      
+      // Reset any token refresh attempts counter
+      window.tokenRefreshAttempts = 0;
+      
+      // Clear any existing auth data to start fresh
+      localStorage.removeItem('authToken');
+      sessionStorage.removeItem('authState');
+      
+      // Perform the Google sign in
+      const result = await signInWithGoogle();
+      
+      if (result && result.user) {
+        console.log('[Login] Sign-in successful for user:', result.user.uid);
+        
+        // Get a fresh token and ensure it's stored
+        const token = await result.user.getIdToken(true);
+        localStorage.setItem('authToken', token);
+        localStorage.setItem('authTimestamp', Date.now().toString());
+        
+        // Store login timestamp and user ID in session storage
+        sessionStorage.setItem('authState', JSON.stringify({
+          loggedIn: true,
+          timestamp: Date.now(),
+          uid: result.user.uid
+        }));
+        
+        // Set a session cookie to help with persistence (longer expiry - 24 hours)
+        document.cookie = `authSession=active; path=/; max-age=86400; SameSite=Strict`;
+        
+        // Also set a local storage version for cross-tab persistence
+        localStorage.setItem('authSessionTime', Date.now().toString());
+        
+        console.log('[Login] Authentication successful, redirecting to dashboard');
+        
+        // Redirect to dashboard after successful login, with a slightly longer delay
+        // to ensure tokens are properly saved
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 800);
+      } else {
+        throw new Error('Failed to get user data after sign in');
+      }
     } catch (err) {
-      console.error('Login error:', err);
+      console.error('[Login] Login error:', err);
       setError('Failed to sign in with Google. Please try again.');
     } finally {
       setLoading(false);

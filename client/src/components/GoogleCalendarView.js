@@ -36,6 +36,44 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
+// Custom CSS to override default styles
+const calendarStyles = `
+  .rbc-time-view {
+    background-color: white;
+  }
+  .rbc-time-header {
+    background-color: white;
+    border-bottom: none;
+  }
+  .rbc-time-content {
+    border-top: 1px solid #e4e4e7;
+  }
+  .rbc-time-slot {
+    background-color: white;
+  }
+  .rbc-time-gutter {
+    background-color: white;
+  }
+  .rbc-day-slot .rbc-time-slot {
+    border-top: none;
+  }
+  .rbc-time-view .rbc-header {
+    border-bottom: none;
+  }
+  /* Remove the empty row above 12 AM */
+  .rbc-time-view .rbc-time-header-gutter {
+    position: relative;
+  }
+  .rbc-time-view .rbc-allday-cell {
+    display: none;
+  }
+  /* Fix to remove the gap above 12 AM */
+  .rbc-time-view .rbc-time-header-content {
+    min-height: 0;
+    border-top: none;
+  }
+`;
+
 // Styled components
 const CalendarContainer = styled(Box)(({ theme }) => ({
   height: 'calc(100vh - 180px)',
@@ -65,11 +103,22 @@ const GoogleCalendarView = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [isConnected, setIsConnected] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(new Date());  const [selectedEvent, setSelectedEvent] = useState(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const navigate = useNavigate();
-    // Check if user has connected Google Calendar
+  
+  // Inject custom CSS
+  useEffect(() => {
+    const styleElement = document.createElement('style');
+    styleElement.innerHTML = calendarStyles;
+    document.head.appendChild(styleElement);
+    
+    return () => {
+      document.head.removeChild(styleElement);
+    };
+  }, []);
+  
+  // Check if user has connected Google Calendar
   useEffect(() => {
     const tokens = localStorage.getItem('calendarTokens');
     if (tokens) {
@@ -159,8 +208,7 @@ const GoogleCalendarView = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-  // Fetch calendar events for the selected date
+  };  // Fetch calendar events for the selected date
   const fetchEvents = async (date) => {
     setIsLoading(true);
     setError('');
@@ -173,24 +221,23 @@ const GoogleCalendarView = () => {
       return;
     }
     
-    console.log('GoogleCalendarView: Found tokens in localStorage', tokens.substring(0, 50) + '...');
-    const parsedTokens = JSON.parse(tokens);
-    console.log('GoogleCalendarView: Parsed tokens', parsedTokens);
-    
-    if (!parsedTokens.access_token) {
-      console.error('GoogleCalendarView: No access_token found in parsed tokens');
-      localStorage.removeItem('calendarTokens');
-      setIsConnected(false);
-      setError('Invalid token format. Please reconnect to Google Calendar.');
-      setIsLoading(false);
-      return;
-    }
-    
-    const { access_token } = parsedTokens;
-    console.log('GoogleCalendarView: Fetching events with token:', access_token.substring(0, 10) + '...');
-    console.log('GoogleCalendarView: For date:', date.toISOString());
-    
     try {
+      console.log('GoogleCalendarView: Found tokens in localStorage');
+      const parsedTokens = JSON.parse(tokens);
+      
+      if (!parsedTokens.access_token) {
+        console.error('GoogleCalendarView: No access_token found in parsed tokens');
+        localStorage.removeItem('calendarTokens');
+        setIsConnected(false);
+        setError('Invalid token format. Please reconnect to Google Calendar.');
+        setIsLoading(false);
+        return;
+      }
+      
+      const { access_token } = parsedTokens;
+      console.log('GoogleCalendarView: Fetching events with token:', access_token.substring(0, 10) + '...');
+      console.log('GoogleCalendarView: For date:', date.toISOString());
+      
       const response = await transcriptionAPI.getCalendarEvents(
         access_token, 
         date.toISOString()
@@ -198,39 +245,45 @@ const GoogleCalendarView = () => {
       
       if (response && response.data && response.data.success) {
         console.log(`GoogleCalendarView: Successfully fetched ${response.data.events.length} events`);
-        console.log('GoogleCalendarView: Events data:', response.data.events);
-        
-        if (response.data.events.length === 0) {
-          console.log('GoogleCalendarView: No events found for the selected date');
-        }
         
         // Format events for the calendar
-        const formattedEvents = response.data.events.map(event => {
-          console.log('GoogleCalendarView: Processing event:', event);
-          return {
-            ...event,
-            start: new Date(event.start),
-            end: new Date(event.end)
-          };
-        });
+        const formattedEvents = response.data.events.map(event => ({
+          ...event,
+          start: new Date(event.start),
+          end: new Date(event.end)
+        }));
         
         setEvents(formattedEvents);
       } else if (response && response.data && response.data.requiresAuth) {
-        console.error('GoogleCalendarView: Token expired or invalid, need to reconnect');
-        // Token expired, need to reconnect
+        console.warn('GoogleCalendarView: Token expired or invalid, need to reconnect');
+        // Token expired, need to reconnect - but don't throw an error
         localStorage.removeItem('calendarTokens');
         setIsConnected(false);
         setError('Calendar authorization expired. Please reconnect to Google Calendar.');
       } else {
         console.error('GoogleCalendarView: Failed response:', response?.data);
-        throw new Error(response?.data?.error || 'Failed to fetch calendar events');
+        setError('Failed to fetch calendar events. Please try reconnecting.');
       }
     } catch (err) {
-      const errorMsg = err.response?.data?.details || err.message || 'Unknown error';
-      setError(`Failed to load calendar events: ${errorMsg}`);
+      // Handle calendar errors gracefully without affecting the main app authentication
       console.error('GoogleCalendarView: Error fetching calendar events:', err);
-      if (err.response) {
-        console.error('GoogleCalendarView: Error response:', err.response.data);
+      
+      if (err.code === 'CALENDAR_AUTH_EXPIRED' || err.requiresReauth) {
+        // This is a controlled error from our API wrapper
+        console.warn('GoogleCalendarView: Calendar auth expired (handled error)');
+        localStorage.removeItem('calendarTokens');
+        setIsConnected(false);
+        setError('Your calendar connection has expired. Please reconnect to Google Calendar.');
+      } else {
+        // Generic error handling
+        const errorMsg = err.message || 'Unknown error';
+        setError(`Failed to load calendar events: ${errorMsg}`);
+        
+        // If we suspect this is an auth error, clear tokens
+        if (errorMsg.includes('auth') || errorMsg.includes('cred') || errorMsg.includes('token')) {
+          localStorage.removeItem('calendarTokens');
+          setIsConnected(false);
+        }
       }
     } finally {
       setIsLoading(false);
@@ -307,8 +360,7 @@ const GoogleCalendarView = () => {
             {isLoading && (
               <CircularProgress size={24} sx={{ color: '#ff7300' }} />
             )}
-          </Box>
-          <Paper 
+          </Box>          <Paper 
             elevation={0} 
             sx={{ 
               flexGrow: 1, 
@@ -317,10 +369,33 @@ const GoogleCalendarView = () => {
               p: 2,
               '& .rbc-calendar': {
                 height: '100%'
+              },
+              '& .rbc-time-header': {
+                background: 'white'
+              },
+              '& .rbc-day-slot .rbc-time-slot': {
+                borderTop: 'none'
+              },
+              '& .rbc-day-bg': {
+                background: 'white'
+              },
+              '& .rbc-time-view': {
+                border: '1px solid #e4e4e7',
+                borderRadius: '8px',
+                overflow: 'hidden'
+              },              '& .rbc-time-content': {
+                borderTop: '1px solid #e4e4e7',
+                marginTop: 0,
+                paddingTop: 0
+              },
+              '& .rbc-time-header-content': {
+                borderTop: 'none'
+              },
+              '& .rbc-allday-cell': {
+                display: 'none'
               }
             }}
-          >
-            <Calendar
+          >            <Calendar
               localizer={localizer}
               events={events}
               startAccessor="start"
@@ -329,7 +404,21 @@ const GoogleCalendarView = () => {
               onNavigate={handleNavigate}
               onSelectEvent={handleSelectEvent}
               defaultView="day"
-              views={['day', 'week']}
+              views={['day', 'week']}              dayLayoutAlgorithm="no-overlap"
+              showAllEvents={false}
+              length={0}
+              min={new Date(0, 0, 0, 0, 0, 0)}
+              max={new Date(0, 0, 0, 23, 59, 59)}formats={{
+                timeGutterFormat: (date, culture, localizer) => 
+                  localizer.format(date, 'h a', culture)
+              }}
+              components={{
+                timeSlotWrapper: ({ children }) => React.cloneElement(children, {
+                  style: {
+                    ...children.props.style,
+                    backgroundColor: 'white'
+                  }                })
+              }}
             />
           </Paper>
         </>

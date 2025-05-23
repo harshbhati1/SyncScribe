@@ -6,10 +6,10 @@
  * Creates a standardized error response object
  * @param {string} title - A short title for the error
  * @param {string} message - A more detailed explanation of the error
- * @param {Object} details - Optional additional details about the error
+ * @param {Object} options - Optional additional details about the error
  * @returns {Object} Standardized error response object
  */
-function getErrorResponse(title, message, details = null) {
+function getErrorResponse(title, message, options = {}) {
   const response = {
     success: false,
     error: {
@@ -18,8 +18,19 @@ function getErrorResponse(title, message, details = null) {
     }
   };
 
-  if (details) {
-    response.error.details = details;
+  // Add code if provided
+  if (options.code) {
+    response.error.code = options.code;
+  }
+
+  // Add any additional details
+  if (options.details) {
+    response.error.details = options.details;
+  }
+  
+  // Add retryable flag if specified
+  if (options.retryable !== undefined) {
+    response.error.retryable = !!options.retryable;
   }
 
   return response;

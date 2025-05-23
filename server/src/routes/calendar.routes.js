@@ -137,7 +137,11 @@ router.get('/events', authMiddleware, async (req, res) => {
   }
 
   if (!userId) {
-    return res.status(401).json({ success: false, error: 'User not authenticated' });
+    return res.status(401).json({ 
+      success: false, 
+      error: 'User not authenticated',
+      requiresAuth: true
+    });
   }
 
   try {
@@ -160,8 +164,7 @@ router.get('/events', authMiddleware, async (req, res) => {
       timeMax: endDate.toISOString(),
       singleEvents: true,
       orderBy: 'startTime',
-    });    console.log('[GET /api/calendar/events] Raw events response:', 
-      JSON.stringify(response.data.items.slice(0, 2), null, 2));
+    });
     
     const events = response.data.items.map(event => ({
       id: event.id,
@@ -174,41 +177,38 @@ router.get('/events', authMiddleware, async (req, res) => {
     }));
 
     console.log(`[GET /api/calendar/events] Processed ${events.length} events`);
-    if (events.length > 0) {
-      console.log('[GET /api/calendar/events] First event sample:', 
-        JSON.stringify(events[0], null, 2));
-    } else {
-      console.log('[GET /api/calendar/events] No events found for the date range');
-    }
 
     return res.status(200).json({ 
       success: true, 
       events
-    });} catch (error) {
+    });
+  } catch (error) {
     console.error('[GET /api/calendar/events] Error fetching events:', error);
-    console.error('[GET /api/calendar/events] Error details:', error.message);
     
-    if (error.response) {
-      console.error('[GET /api/calendar/events] Error response:', {
-        status: error.response.status,
-        statusText: error.response.statusText,
-        data: error.response.data
-      });
-    }
-    
-    // Check if token expired
-    if (error.response && error.response.status === 401) {
+    // Check if token expired or invalid credentials
+    if (error.message && (
+        error.message.includes('Invalid Credentials') || 
+        error.message.includes('invalid_token') ||
+        error.code === 401 ||
+        (error.response && error.response.status === 401))) {
+      
+      console.warn('[GET /api/calendar/events] Calendar credentials are invalid or expired');
+      
       return res.status(401).json({ 
         success: false, 
         error: 'Calendar authentication expired',
-        requiresAuth: true
+        requiresAuth: true,
+        isCalendarError: true, // Add flag to identify this as a calendar-specific error
+        errorType: 'calendar_auth'
       });
     }
     
+    // Return a detailed error for other cases
     return res.status(500).json({ 
       success: false, 
       error: 'Failed to fetch calendar events',
-      details: error.message
+      details: error.message,
+      isCalendarError: true
     });
   }
 });

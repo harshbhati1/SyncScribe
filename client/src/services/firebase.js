@@ -4,7 +4,7 @@
  */
 
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 // Import analytics only if you need it
 // import { getAnalytics } from "firebase/analytics";
@@ -25,6 +25,16 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase services
 const auth = getAuth(app);
+
+// Set persistence to LOCAL (survives browser restarts)
+setPersistence(auth, browserLocalPersistence)
+  .then(() => {
+    console.log('Firebase Auth: Persistence set to LOCAL');
+  })
+  .catch((error) => {
+    console.error('Firebase Auth: Error setting persistence:', error);
+  });
+
 const firestore = getFirestore(app);
 
 // Initialize Analytics (optional)

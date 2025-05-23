@@ -26,20 +26,36 @@ try {
  * Verifies the ID token in the Authorization header
  */
 const authMiddleware = async (req, res, next) => {
+  // Special handling for calendar routes with errors
+  const isCalendarRoute = req.path.includes('/calendar/');
+  
   // Check if Firebase was initialized successfully
   if (!firebaseInitialized) {
     // This check is good, but ensure firebase.config.js handles its own initialization errors robustly.
     console.error('Auth Middleware Error: Firebase Admin SDK does not appear to be initialized.');
     return res.status(503).json( // 503 Service Unavailable might be more fitting
-      getErrorResponse('Server Configuration Error', 'Firebase initialization failed or admin SDK not available.')
+      getErrorResponse('Server Configuration Error', 'Firebase initialization failed or admin SDK not available.', 
+        { code: 'firebase-not-initialized', retryable: true })
     );
   }
 
   // Get the ID token from the Authorization header
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // For calendar routes, handle auth errors more gracefully
+    if (isCalendarRoute) {
+      console.warn('[Auth Middleware] No auth token for calendar route:', req.path);
+      return res.status(401).json({
+        success: false,
+        error: 'Calendar authentication required',
+        requiresAuth: true,
+        isCalendarError: true
+      });
+    }
+    
     return res.status(401).json(
-      getErrorResponse('Unauthorized', 'No authentication token provided or malformed header.')
+      getErrorResponse('Unauthorized', 'No authentication token provided or malformed header.', 
+        { code: 'missing-auth-header', retryable: false })
     );
   }
 
@@ -47,7 +63,8 @@ const authMiddleware = async (req, res, next) => {
 
   if (!idToken || idToken === 'null' || idToken === 'undefined') {
     return res.status(401).json(
-        getErrorResponse('Unauthorized', 'Blank authentication token provided.')
+        getErrorResponse('Unauthorized', 'Blank authentication token provided.', 
+          { code: 'empty-token', retryable: false })
     );
   }
 
@@ -58,9 +75,7 @@ const authMiddleware = async (req, res, next) => {
     console.log(`[Auth Middleware] Token verified for UID: ${decodedToken.uid}`);
     next();
   } catch (error) {
-    console.error(`[Auth Middleware] Error verifying authentication token for token starting with "${idToken.substring(0,10)}...":`, error.code, error.message);
-
-    // Handle different types of authentication errors
+    console.error(`[Auth Middleware] Error verifying authentication token for token starting with "${idToken.substring(0,10)}...":`, error.code, error.message);    // Handle different types of authentication errors
     if (error.code === 'auth/id-token-expired') {
       // UPDATED BEHAVIOR:
       // In all environments (including development), an expired token is a 401 error.
@@ -68,9 +83,9 @@ const authMiddleware = async (req, res, next) => {
       // client-side token refresh logic is working correctly.
       console.warn('[Auth Middleware] ID token expired. Sending 401.');
       return res.status(401).json(
-        getErrorResponse('Unauthorized', 'Authentication token expired. Please refresh your session.')
+        getErrorResponse('Unauthorized', 'Authentication token expired. Please refresh your session.', { code: 'token-expired' })
       );
-
+      
       /* --- PREVIOUS DEVELOPMENT-ONLY SIMULATION LOGIC (NOW COMMENTED OUT) ---
       if (process.env.NODE_ENV === 'development') {
         console.warn('AUTH WARNING (Legacy): Using simulated auth due to expired token in development mode');
@@ -89,16 +104,15 @@ const authMiddleware = async (req, res, next) => {
           getErrorResponse('Unauthorized', 'Authentication token expired')
         );
       }
-      */
-    } else if (error.code === 'auth/id-token-revoked') {
+      */    } else if (error.code === 'auth/id-token-revoked') {
       console.warn('[Auth Middleware] ID token revoked. Sending 401.');
       return res.status(401).json(
-        getErrorResponse('Unauthorized', 'Authentication token has been revoked.')
+        getErrorResponse('Unauthorized', 'Authentication token has been revoked.', { code: 'token-revoked', retryable: false })
       );
     } else if (error.code === 'auth/argument-error') {
         console.warn('[Auth Middleware] Invalid ID token (argument error - likely malformed or empty). Sending 401.');
         return res.status(401).json(
-            getErrorResponse('Unauthorized', 'Invalid authentication token format.')
+            getErrorResponse('Unauthorized', 'Invalid authentication token format.', { code: 'token-invalid', retryable: false })
         );
     }
     // Add more specific Firebase error codes if needed:
@@ -106,7 +120,8 @@ const authMiddleware = async (req, res, next) => {
     else {
       console.warn('[Auth Middleware] Unknown or generic error verifying ID token. Sending 401. Error Code:', error.code);
       return res.status(401).json(
-        getErrorResponse('Unauthorized', `Invalid authentication token. Error: ${error.message}`)
+        getErrorResponse('Unauthorized', `Invalid authentication token. Error: ${error.message}`, 
+          { code: 'token-verification-failed', originalError: error.code, retryable: false })
       );
     }
   }

@@ -15,6 +15,9 @@ const getAuthToken = () => {
 const apiRequest = async (endpoint, options = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
   
+  // Check if this is a calendar-related request
+  const isCalendarRequest = endpoint.includes('/calendar/');
+  
   // Default headers
   const headers = {
     'Content-Type': 'application/json',
@@ -28,6 +31,11 @@ const apiRequest = async (endpoint, options = {}) => {
     console.log('Using auth token:', token.substring(0, 10) + '...');
   } else {
     console.log('No auth token available');
+    
+    // If this is not a calendar request and no token is available, we might have an auth issue
+    if (!isCalendarRequest && !endpoint.includes('/auth/')) {
+      console.warn('Attempting API request without auth token');
+    }
   }
   
   console.log(`Making API request to: ${url}`);
@@ -37,7 +45,8 @@ const apiRequest = async (endpoint, options = {}) => {
     ...options,
     headers,
   };
-    try {
+  
+  try {
     const response = await fetch(url, requestOptions);
     
     // Handle unauthorized response (token expired)
@@ -45,16 +54,83 @@ const apiRequest = async (endpoint, options = {}) => {
       const responseData = await response.json();
       console.warn('Authentication error:', responseData?.error);
       
-      // Try to refresh the token if it's expired
-      if (responseData?.error?.includes('expired')) {
-        console.log('Token expired. Attempting to refresh...');
+      // Special case for calendar errors - don't log out the user for calendar issues
+      if (isCalendarRequest && (responseData?.error?.message?.includes('Calendar') || 
+                               url.includes('calendar/events'))) {
+        console.warn('Calendar authentication error - handling separately');
+        return { 
+          data: { 
+            success: false, 
+            error: responseData.error || 'Calendar authentication failed', 
+            requiresAuth: true 
+          }, 
+          status: 401 
+        };
+      }
+      
+      // Check for token expired error specifically
+      const isExpired = responseData?.error?.code === 'token-expired' || 
+                       responseData?.error?.message?.includes('expired') ||
+                       responseData?.error?.title?.includes('expired');
+      
+      // Check if the error is retryable
+      const isRetryable = responseData?.error?.retryable !== false;
+      
+      if ((isExpired || !getAuthToken()) && isRetryable) {
+        console.log('Token expired or missing. Attempting to refresh...');
+        
+        // Track refresh attempts to prevent infinite loops
+        const refreshAttempt = window.tokenRefreshAttempts || 0;
+        window.tokenRefreshAttempts = refreshAttempt + 1;
+        
+        // If we've tried too many times, force a complete re-login
+        if (window.tokenRefreshAttempts > 3) {
+          console.error('Too many token refresh attempts. Forcing re-authentication.');
+          localStorage.removeItem('authToken');
+          sessionStorage.removeItem('authState');
+          document.cookie = `authSession=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+          window.tokenRefreshAttempts = 0; // Reset for next login
+          window.location.href = '/login';
+          return null;
+        }
+        
         try {
-          // Import firebase auth directly here to avoid circular dependency
+          // Import auth context to use the forceRefreshToken function
           const { auth } = await import('../services/firebase');
-          if (auth.currentUser) {
-            const newToken = await auth.currentUser.getIdToken(true);
+          
+          // Check if we have a current user first
+          if (!auth.currentUser) {
+            console.warn('No current user found in Firebase auth. Cannot refresh token.');
+            localStorage.removeItem('authToken'); 
+            window.location.href = '/login';
+            return null;
+          }
+          
+          // Try to get a refresh function
+          const { forceRefreshToken } = await import('../contexts/AuthContext').then(module => {
+            // If useAuth is exported directly, import it and call it
+            try {
+              return module.useAuth();
+            } catch (e) {
+              // Otherwise try to access the context directly (fallback)
+              console.log('Using auth token refresh fallback method');
+              return { forceRefreshToken: async () => {
+                if (auth.currentUser) {
+                  return await auth.currentUser.getIdToken(true);
+                }
+                return null;
+              }};
+            }
+          });
+          
+          // Use the forceRefreshToken function if available, otherwise fall back to direct token refresh
+          const newToken = await forceRefreshToken() || 
+                          (auth.currentUser ? await auth.currentUser.getIdToken(true) : null);
+          
+          if (newToken) {
             console.log('Token refreshed successfully');
             localStorage.setItem('authToken', newToken);
+            document.cookie = `authSession=active; path=/; max-age=3600; SameSite=Strict`;
             
             // Retry the request with new token
             headers['Authorization'] = `Bearer ${newToken}`;
@@ -65,12 +141,27 @@ const apiRequest = async (endpoint, options = {}) => {
             
             console.log('Retrying request with new token');
             const retryResponse = await fetch(url, retryOptions);
+            
+            // If we still get 401 after refresh, something else is wrong
+            if (retryResponse.status === 401) {
+              console.error('Still getting 401 after token refresh. User may need to re-authenticate.');
+              localStorage.removeItem('authToken');
+              window.location.href = '/login';
+              return null;
+            }
+            
             const retryData = await retryResponse.json();
             return { data: retryData, status: retryResponse.status };
+          } else {
+            console.error('No current user or token refresh failed');
           }
         } catch (refreshError) {
           console.error('Failed to refresh token:', refreshError);
         }
+      } else if (!isRetryable) {
+        console.warn('Authentication error is not retryable. Reason:', responseData?.error?.code);
+      } else {
+        console.warn('Authentication error is not due to token expiration. Code:', responseData?.error?.code);
       }
       
       // If token refresh failed or user not logged in, redirect to login
@@ -97,7 +188,8 @@ export const authAPI = {
 };
 
 // Transcription-specific API calls
-export const transcriptionAPI = {  processAudio: async (audioData, options = {}) => {
+export const transcriptionAPI = {
+  processAudio: async (audioData, options = {}) => {
     const token = getAuthToken();
     if (!token) {
       console.error("No auth token available for audio processing");
@@ -131,7 +223,7 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
 
     const url = `${API_BASE_URL}/transcription/process`;
     
-    try {
+        try {
       console.log(`Sending audio data (${audioData.size} bytes) to ${url}`);
       
       const response = await fetch(url, {
@@ -156,8 +248,7 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
       throw error;
     }
   },
-  
-  // Method to generate a meeting summary
+    // Method to generate a meeting summary
   generateSummary: (transcript, meetingId) => apiRequest('/summary/generate', {
     method: 'POST',
     body: JSON.stringify({
@@ -165,6 +256,63 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
       meetingId
     })
   }),
+  
+  // Method to create a shareable link for a summary
+  createSummaryShareLink: (summary, meetingTitle) => apiRequest('/summary/share', {
+    method: 'POST',
+    body: JSON.stringify({
+      summary,
+      meetingTitle
+    })
+  }),
+  
+  // Function to share summary and get a shareable link
+  shareSummary: (summary, meetingTitle) => apiRequest('/summary/share', {
+    method: 'POST',
+    body: JSON.stringify({
+      summary,
+      meetingTitle
+    })
+  }),
+  
+  // Function to format summary for export (will be used by the server-side share feature)
+  exportSummary: (summary, meetingTitle) => {
+    if (!summary) {
+      throw new Error('No summary data available to export');
+    }
+    
+    const currentDate = new Date().toLocaleDateString();
+    let exportContent = `# ${meetingTitle || 'Meeting Summary'}\n`;
+    exportContent += `Generated on: ${currentDate}\n\n`;
+    
+    if (summary.title) {
+      exportContent += `# ${summary.title}\n\n`;
+    }
+    
+    if (summary.overall) {
+      exportContent += `## Overall Summary\n${summary.overall}\n\n`;
+    }
+    
+    if (summary.sections && Array.isArray(summary.sections)) {
+      // Process sections, ensuring action items come last
+      const sortedSections = [...summary.sections].sort((a, b) => {
+        const aIsAction = a.headline.toLowerCase().includes('action') || 
+                          a.headline.toLowerCase().includes('next step');
+        const bIsAction = b.headline.toLowerCase().includes('action') || 
+                          b.headline.toLowerCase().includes('next step');
+        
+        if (aIsAction && !bIsAction) return 1; // Action items go last
+        if (!aIsAction && bIsAction) return -1; // Non-action items go first
+        return 0;
+      });
+      
+      sortedSections.forEach(section => {
+        exportContent += `## ${section.headline}\n${section.content}\n\n`;
+      });
+    }
+    
+    return exportContent;
+  },
   
   chatWithTranscript: (fullTranscript, clientSideChatHistory, newUserQuery, callbacks) => {
     const url = `${API_BASE_URL}/chat`;
@@ -187,18 +335,18 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
         }
         resolve({ status: 'timeout', message: 'Request timed out' });
       }, 60000); // 60 second safety timeout (increased from 40s)
-      
-      fetch(url, {
+        fetch(url, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({ 
           fullTranscript, 
           clientSideChatHistory, 
           newUserQuery 
-        })      }).then(response => {
-        if (!response.ok) {
+        })
+      }).then(response => {        if (!response.ok) {
           clearTimeout(safetyTimeoutId);
-          return response.json().then(err => {          // Special handling for rate limiting (429)
+          return response.json().then(err => {
+            // Special handling for rate limiting (429)
             if (response.status === 429) {
               const retryAfter = response.headers.get('Retry-After') || '30';
               throw new Error(`Rate limit exceeded. Please try again in ${retryAfter} seconds.`);
@@ -233,10 +381,11 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
               return;
             }
 
-            buffer += decoder.decode(value, { stream: true });
+                        buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n\n');
             buffer = lines.pop(); // Keep the incomplete line in the buffer
-              // Reset the safety timeout each time we get data
+            
+            // Reset the safety timeout each time we get data
             clearTimeout(safetyTimeoutId);
             safetyTimeoutId = setTimeout(() => {
               console.log("Chat stream timeout - forcing end");
@@ -245,10 +394,14 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
               }
               resolve({ status: 'timeout', message: 'Stream timed out' });
             }, 30000); // 30 second stream timeout (increased from 20s)
-
+            
             for (const line of lines) {
-              if (line.trim() === '') continue;
-              if (!line.startsWith('data:')) continue;
+              if (line.trim() === '') {
+                continue;
+              }
+              if (!line.startsWith('data:')) {
+                continue;
+              }
               
               try {
                 const eventData = JSON.parse(line.substring(5).trim());
@@ -263,7 +416,8 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
                   if (callbacks && callbacks.onChunk) {
                     callbacks.onChunk(eventData.textChunk);
                   }
-                } else if (eventData.error) {                // Handle error messages sent as stream events
+                } else if (eventData.error) {
+                  // Handle error messages sent as stream events
                   const errorObj = new Error(eventData.errorMessage || eventData.error || 'Unknown stream error');
                   errorObj.code = eventData.errorCode || 'STREAM_ERROR';
                   errorObj.isRetryable = eventData.retryable === true;
@@ -357,7 +511,6 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
       meetingId
     })
   }),
-
   // Calendar Integration Methods
   getCalendarAuthUrl: () => {
     console.log('API: Requesting calendar auth URL');
@@ -373,11 +526,50 @@ export const transcriptionAPI = {  processAudio: async (audioData, options = {})
       body: JSON.stringify({ code })
     });
   },
-  
-  getCalendarEvents: (accessToken, date) => {
+    getCalendarEvents: (accessToken, date) => {
     console.log('API: Getting calendar events for date:', date);
+    
+    // Check if token exists - don't even try if not
+    if (!accessToken) {
+      console.error('API: No access token provided for calendar events');
+      return Promise.reject(new Error('No calendar access token'));
+    }
+    
+    // Check if there's a session in progress - don't make calendar calls if user isn't properly logged in
+    const authToken = localStorage.getItem('authToken');
+    if (!authToken) {
+      console.warn('API: Attempting to fetch calendar events without being logged in');
+      return Promise.reject({
+        code: 'AUTH_REQUIRED',
+        message: 'You must be logged in to access calendar',
+        requiresAuth: true
+      });
+    }
+    
     return apiRequest(`/calendar/events?accessToken=${encodeURIComponent(accessToken)}&date=${encodeURIComponent(date)}`, {
       method: 'GET'
+    }).catch(error => {
+      // Special handling for calendar token errors
+      if (error.status === 401 || error.code === 401 || 
+          (error.message && error.message.includes('Invalid Credentials'))) {
+        console.error('API: Calendar token invalid or expired');
+        
+        // Clear stored calendar tokens to force re-auth
+        if (localStorage.getItem('calendarTokens')) {
+          console.log('API: Clearing stored calendar tokens');
+          localStorage.removeItem('calendarTokens');
+        }
+        
+        // Return a structured error for the UI to handle
+        return Promise.reject({
+          code: 'CALENDAR_AUTH_EXPIRED',
+          message: 'Your Google Calendar access has expired. Please reconnect.',
+          requiresReauth: true
+        });
+      }
+      
+      // Pass through other errors
+      return Promise.reject(error);
     });
   }
 };

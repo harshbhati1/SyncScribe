@@ -35,6 +35,7 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import PersonIcon from '@mui/icons-material/Person';
 import InsightsIcon from '@mui/icons-material/Insights';
 import SendIcon from '@mui/icons-material/Send';
+import ShareIcon from '@mui/icons-material/Share';
 import apiRequest, { transcriptionAPI } from '../services/api';
 import MeetingRecorder from './MeetingRecorder';
 
@@ -124,8 +125,7 @@ const ActionButton = styled(Button)(({ theme }) => ({
   }
 }));
 
-const Transcription = () => {
-  const { currentUser, refreshToken } = useAuth();
+const Transcription = () => {  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const { meetingId } = useParams();
   // --- State Variables ---
@@ -168,10 +168,10 @@ const Transcription = () => {
       }
     }
     
-    // Save before changing tabs
+    // Save silently before changing tabs
     if (chatMessages.length > 0) {
       console.log('[Transcription] Saving before tab change to preserve chat messages');
-      saveTranscription();
+      saveTranscription(true);
     }
     
     setTabValue(newValue);
@@ -257,19 +257,18 @@ const Transcription = () => {
     }
   }, []);
   
-  // --- Data Handling Functions ---
-  // Define saveTranscription first without autoSaveTranscription dependency
-  const saveTranscription = useCallback(async () => {
+  // --- Data Handling Functions ---  // Define saveTranscription first without autoSaveTranscription dependency
+  const saveTranscription = useCallback(async (isSilent = false) => {
     try {
       setIsProcessing(true);
-      setSnackbarMessage('Saving meeting data...');
-      setSnackbarOpen(true);
       
-      // Refresh token before making critical API calls
-      if (refreshToken) {
-        await refreshToken(true);
-        console.log('Refreshed token before saving meeting');
-      }        // Create meeting data object
+      // Only show saving notification for explicit saves
+      if (!isSilent) {
+        setSnackbarMessage('Saving meeting data...');
+        setSnackbarOpen(true);
+      }
+      
+      // Create meeting data object
       const meetingData = {
         id: meetingId || `meeting-${Date.now()}`, // Use existing or generate new
         title: meetingTitle,
@@ -287,7 +286,9 @@ const Transcription = () => {
       console.log(`[Transcription] - Transcript length: ${rawTranscript?.length || 0} characters`);
       console.log(`[Transcription] - Chat messages: ${chatMessages?.length || 0}`);
       console.log(`[Transcription] - Has summary: ${summary ? 'Yes' : 'No'}`);
-      console.log(`[Transcription] - Title: ${meetingTitle}`);      // Ensure chat messages have all required fields for display
+      console.log(`[Transcription] - Title: ${meetingTitle}`);
+      
+      // Ensure chat messages have all required fields for display
       const sanitizedChatMessages = chatMessages.map(msg => ({
         id: msg.id || `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         text: msg.text || '',
@@ -295,10 +296,6 @@ const Transcription = () => {
         isStreaming: false, // Always false when saving
         timestamp: msg.timestamp || new Date().toISOString()
       }));
-      
-      console.log(`[Transcription] Preparing to save ${sanitizedChatMessages.length} chat messages`);
-      console.log(`[Transcription] Chat messages sample:`, sanitizedChatMessages.length > 0 ? 
-        `First: ${sanitizedChatMessages[0].text.substring(0, 30)}...` : 'None');
       
       // Update the meeting data object with sanitized chat messages
       const finalMeetingData = {
@@ -319,33 +316,44 @@ const Transcription = () => {
           navigate(`/transcription/${savedMeetingId}`);
         }
         
-        // Show success message
-        setSnackbarMessage('Meeting saved successfully!');
-        setSnackbarOpen(true);
+        // Show success message only for explicit saves
+        if (!isSilent) {
+          setSnackbarMessage('Meeting saved successfully!');
+          setSnackbarOpen(true);
+        }
       } else {
         setError('Failed to save meeting. Unexpected API response.');
       }
     } catch (err) {
       console.error('Error saving meeting:', err);
+      // Show error notifications even for silent saves since they're important
       setError('Failed to save meeting. Please try again.');
       setSnackbarMessage('Failed to save meeting');
       setSnackbarOpen(true);    
     } finally {
       setIsProcessing(false);
     }
-  }, [meetingId, meetingTitle, rawTranscript, transcriptionSegments, chatMessages, summary, refreshToken, navigate, setIsProcessing, setSnackbarMessage, setSnackbarOpen, setError]);
-    // Auto-save functionality - defined after saveTranscription is fully defined
+  }, [meetingId, meetingTitle, rawTranscript, transcriptionSegments, chatMessages, summary, navigate, setIsProcessing, setSnackbarMessage, setSnackbarOpen, setError]);
+  
+  // Auto-save functionality - defined after saveTranscription is fully defined
   const autoSaveTranscription = useCallback(() => {
+    // Skip auto-save if we just shared a summary to avoid duplicate notifications
+    if (window.justSharedSummary) {
+      console.log('[Transcription] Skipping auto-save because summary was just shared');
+      return;
+    }
+    
     if ((rawTranscript && rawTranscript.length > 50) || chatMessages.length > 0 || summary) {
       console.log('[Transcription] Auto-saving transcription, chat history, and summary data');
       console.log(`[Transcription] Data stats: ${rawTranscript?.length || 0} chars transcript, ${chatMessages.length} chat messages, summary: ${summary ? 'yes' : 'no'}`);
       
       // Set a slight delay to allow any pending state updates to complete
       setTimeout(() => {
-        saveTranscription();
+        // Call saveTranscription with isSilent flag
+        saveTranscription(true);
       }, 100);
     }
-  }, [rawTranscript, chatMessages, summary, saveTranscription]);
+  }, [rawTranscript, chatMessages.length, summary, saveTranscription]);
   
   // Generate summary function
   const generateSummary = useCallback(async () => {
@@ -423,9 +431,68 @@ const Transcription = () => {
         setSnackbarOpen(true);
         console.error("Summary generation exception:", err.message || 'Unknown error');} finally {
         setIsProcessing(false);
+    }  }, [rawTranscript, meetingId, meetingTitle, summary, setError, setSummary, setTabValue, setIsProcessing, setSnackbarMessage, setSnackbarOpen]);
+  
+  // Function to share summary as a link
+  const shareSummaryAsLink = useCallback(() => {
+    if (!summary) {
+      setError("No summary available to share.");
+      setSnackbarMessage("No summary available to share.");
+      setSnackbarOpen(true);
+      return;
     }
-  }, [rawTranscript, meetingId, meetingTitle, summary, setError, setSummary, setTabValue, setIsProcessing, setSnackbarMessage, setSnackbarOpen]);
-    // --- Callback for MeetingRecorder component (updates main transcript) - no animation ---
+
+    try {
+      // Show loading state
+      setIsProcessing(true);
+      
+      // Call the API to create a shareable link
+      transcriptionAPI.shareSummary(summary, meetingTitle)
+        .then(response => {          if (response.data && response.data.shareUrl) {
+            // Create a full URL that can be shared
+            const baseUrl = window.location.origin;
+            const fullShareUrl = `${baseUrl}/summary/shared/${response.data.shareId}`;
+            
+            // Copy the URL to clipboard
+            navigator.clipboard.writeText(fullShareUrl)
+              .then(() => {
+                // Create a cleaner message with just the URL
+                setSnackbarMessage(`Link copied: ${fullShareUrl} - Share this link with others!`);
+                setSnackbarOpen(true);
+                console.log(`Summary shared successfully: ${fullShareUrl}`);
+                
+                // Set a flag to prevent auto-save from running right after sharing
+                window.justSharedSummary = true;
+                setTimeout(() => { window.justSharedSummary = false; }, 5000);
+              }).catch(err => {
+                console.error('Failed to copy URL to clipboard:', err);
+                // Display the link directly in the message so users can still see it
+                setSnackbarMessage(`Link created: ${fullShareUrl} - Copy this link manually to share`);
+                setSnackbarOpen(true);
+              });
+          } else {
+            throw new Error('Invalid response from server');
+          }
+        })
+        .catch(error => {
+          console.error('Error sharing summary:', error);
+          setError(`Failed to share summary: ${error.message}`);
+          setSnackbarMessage("Failed to create shareable link. Please try again.");
+          setSnackbarOpen(true);
+        })
+        .finally(() => {
+          setIsProcessing(false);
+        });
+    } catch (error) {
+      console.error('Error sharing summary:', error);
+      setError(`Failed to share summary: ${error.message}`);
+      setSnackbarMessage("Failed to create shareable link. Please try again.");
+      setSnackbarOpen(true);
+      setIsProcessing(false);
+    }
+    }, [summary, meetingTitle, setError, setSnackbarMessage, setSnackbarOpen, setIsProcessing]);
+  
+  // --- Callback for MeetingRecorder component (updates main transcript) - no animation ---
   const handleMeetingRecorderUpdate = useCallback((textChunk, metadata) => {
     // No reset handling - transcripts are now permanent
     
@@ -435,7 +502,9 @@ const Transcription = () => {
       setError(chunkToProcess); // Display error in global error state
     } else {
       setError(''); // Clear error if successful transcription
-    }    // Handle recording stopped event - this is for auto-saving and generating summary when recording stops
+    }
+
+    // Handle recording stopped event - this is for auto-saving and generating summary when recording stops
     if (metadata && metadata.type === 'recording_stopped' && metadata.shouldSave) {
       console.log("Recording stopped, auto-saving transcript...");
       setTimeout(() => {
@@ -570,16 +639,17 @@ const Transcription = () => {
       sender: 'user',
       timestamp: new Date().toISOString()
     };
-      // Update UI immediately
+    
+    // Update UI immediately
     setChatMessages(prevMessages => [...prevMessages, userMessage]);
     setChatQuery(''); // Clear input field
     setIsAiResponding(true);
 
-    // Save chat messages immediately after adding user message
+    // Save chat messages silently after adding user message
     setTimeout(() => {
       console.log('[Transcription] Auto-saving after adding user chat message');
       console.log(`[Transcription] Chat message count before save: ${chatMessages.length + 1}`);
-      saveTranscription();
+      saveTranscription(true);
     }, 500);
     
     // Generate ID for AI response
@@ -662,12 +732,11 @@ const Transcription = () => {
             });
             
             setIsAiResponding(false);
-            currentAiMessageIdRef.current = null;
-              // Auto-save after chat completes to preserve conversation history
+            currentAiMessageIdRef.current = null;              // Auto-save silently after chat completes to preserve conversation history
             setTimeout(() => {
               console.log('[Transcription] Saving meeting data after chat response completed');
               console.log(`[Transcription] Chat message count after AI response: ${chatMessages.length}`);
-              saveTranscription();
+              saveTranscription(true);
             }, 1000);
           },onError: (error) => {
             console.error("Chat stream error:", error);
@@ -755,12 +824,11 @@ const Transcription = () => {
   }, [rawTranscript, chatMessages.length, autoSaveTranscription]);
   
   // Auto-save when user navigates away 
-  useEffect(() => {
-    const handleBeforeUnload = () => {
+  useEffect(() => {    const handleBeforeUnload = () => {
       if (rawTranscript && rawTranscript.length > 50) {
         // We can't await this in a beforeunload event,
         // but we can synchronously trigger the save process
-        saveTranscription();
+        saveTranscription(true);
       }
     };
     
@@ -1495,36 +1563,35 @@ const Transcription = () => {
             </Card>            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }} onClick={(e) => {
               console.log("[Transcription] Export button container onClick prevented");
               e.stopPropagation();
-              e.preventDefault();
-            }}>                <Button 
-                  variant="outlined" 
-                  startIcon={<InsightsIcon />}
+              e.preventDefault();            }}>
+                <Button 
+                  variant="contained" 
+                  startIcon={<ShareIcon />}
                   onClick={(e) => {
-                    console.log("[Transcription] Export summary button clicked");
+                    console.log("[Transcription] Share summary button clicked");
                     e.preventDefault();
                     e.stopPropagation();
-                    // TODO: Add export logic here
-                    console.log('Export Summary clicked');
-                  }} 
+                    // Call the shareSummaryAsLink function
+                    shareSummaryAsLink();
+                  }}
+                  disabled={isProcessing}
                   sx={{ 
                     borderRadius: '24px',
-                    borderColor: '#0b4f75',
-                    color: '#0b4f75',
+                    backgroundColor: '#ff7300',
+                    color: '#ffffff',
                     fontWeight: 600,
                     padding: '8px 24px',
                     textTransform: 'none',
-                    boxShadow: '0 2px 6px rgba(11, 79, 117, 0.05)',
+                    boxShadow: '0 2px 6px rgba(255, 115, 0, 0.3)',
                     transition: 'all 0.3s ease',
                     '&:hover': {
-                      borderColor: '#ff7300',
-                      color: '#ff7300',
-                      backgroundColor: 'rgba(255, 115, 0, 0.04)',
-                      boxShadow: '0 4px 10px rgba(11, 79, 117, 0.1)',
+                      backgroundColor: '#e56800',
+                      boxShadow: '0 4px 10px rgba(255, 115, 0, 0.4)',
                       transform: 'translateY(-2px)'
                     }
                   }}
                 >
-                  Export Summary
+                  {isProcessing ? 'Creating Link...' : 'Share Summary'}
                 </Button>
             </Box>
          </Box>        ) : (          <Box 

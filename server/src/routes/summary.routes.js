@@ -7,6 +7,10 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middlewares/auth.middleware');
 const { initializeGemini } = require('../config/gemini.config');
+const crypto = require('crypto'); // For generating unique share IDs
+
+// Store for shared summaries
+const sharedSummaries = new Map();
 
 /**
  * POST /api/summary/generate
@@ -348,8 +352,98 @@ function parseSummaryResponse(text) {
     summary.actionItems = summary.actionItems.length ? summary.actionItems : ["No action items were identified."];
     summary.keyPoints = summary.keyPoints.length ? summary.keyPoints : ["No key points were identified."];
   }
-
   return summary;
 }
+
+/**
+ * POST /api/summary/share
+ * Creates a shareable link for a summary
+ */
+router.post('/share', authMiddleware, async (req, res) => {
+  const { summary, meetingTitle } = req.body;
+  const userId = req.user ? req.user.uid : 'unknown';
+
+  if (!summary) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'No summary data provided for sharing.'
+    });
+  }
+
+  try {
+    // Generate a unique share ID
+    const shareId = crypto.randomBytes(8).toString('hex');
+    const timestamp = Date.now();
+    
+    // Store the summary with metadata
+    sharedSummaries.set(shareId, {
+      summary,
+      meetingTitle,
+      createdBy: userId,
+      createdAt: timestamp,
+      expiresAt: timestamp + (7 * 24 * 60 * 60 * 1000), // Expires after 7 days
+      accessCount: 0
+    });
+    
+    // Construct the share URL
+    const shareUrl = `/api/summary/shared/${shareId}`;
+    
+    console.log(`[POST /api/summary/share] Created share link ${shareUrl} for user ${userId}`);
+    
+    return res.status(200).json({
+      success: true,
+      shareId,
+      shareUrl,
+      expiresAt: timestamp + (7 * 24 * 60 * 60 * 1000)
+    });
+  } catch (error) {
+    console.error('[POST /api/summary/share] Error creating share link:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to create share link'
+    });
+  }
+});
+
+/**
+ * GET /api/summary/shared/:shareId
+ * Gets a shared summary by ID (public access)
+ */
+router.get('/shared/:shareId', async (req, res) => {
+  const { shareId } = req.params;
+  
+  if (!sharedSummaries.has(shareId)) {
+    return res.status(404).json({
+      success: false,
+      error: 'Shared summary not found or has expired'
+    });
+  }
+  
+  const sharedData = sharedSummaries.get(shareId);
+  
+  // Check if the share has expired
+  if (Date.now() > sharedData.expiresAt) {
+    sharedSummaries.delete(shareId);
+    return res.status(404).json({
+      success: false,
+      error: 'Shared summary has expired'
+    });
+  }
+  
+  // Increment access count
+  sharedData.accessCount += 1;
+  sharedSummaries.set(shareId, sharedData);
+  
+  // Return the shared summary - can be formatted or rendered in a template
+  return res.status(200).json({
+    success: true,
+    data: {
+      summary: sharedData.summary,
+      meetingTitle: sharedData.meetingTitle,
+      createdAt: new Date(sharedData.createdAt).toISOString(),
+      accessCount: sharedData.accessCount
+    }
+  });
+});
 
 module.exports = router;

@@ -57,6 +57,10 @@ const EnhancedNotifications = ({
   snackbarMessage, 
   handleSnackbarClose 
 }) => {
+  // Check if the message is a share link notification
+  const isShareNotification = snackbarMessage && 
+    (snackbarMessage.includes('Link copied:') || 
+     snackbarMessage.includes('Link created:'));
   return (
     <>      {error && (
         <Alert 
@@ -108,33 +112,82 @@ const EnhancedNotifications = ({
               }} 
             />
             <Typography variant="body2">
-              Generating meeting summary... This may take a few moments.
+              Generating meeting summary... This may take a few moments.            </Typography>
+          </Box>
+        </Alert>
+      )}
+      
+      {/* Share link notification with custom styling */}
+      {isShareNotification && (
+        <Alert 
+          severity="success" 
+          sx={{ 
+            position: 'fixed', 
+            top: '80px', 
+            left: '50%', 
+            transform: 'translateX(-50%)', 
+            zIndex: 9999,
+            minWidth: '350px',
+            maxWidth: '90%',
+            boxShadow: '0 8px 24px rgba(11, 79, 117, 0.15)',
+            backgroundColor: '#ff7300', // Match the orange color theme
+            color: '#ffffff',
+            borderLeft: '4px solid #e56800',
+            display: snackbarOpen ? 'flex' : 'none',
+            alignItems: 'center',
+            '& .MuiAlert-icon': {
+              color: '#ffffff'
+            }
+          }}
+          onClose={handleSnackbarClose}
+        >
+          <Box>
+            <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 0.5 }}>
+              Summary Link Created
+            </Typography>
+            <Typography variant="body2" sx={{ 
+              fontFamily: 'monospace', 
+              p: 1, 
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+              borderRadius: '4px',
+              wordBreak: 'break-all'
+            }}>
+              {snackbarMessage.includes('Link copied:') ? 
+                snackbarMessage.replace('Link copied:', '').split(' - ')[0] : 
+                snackbarMessage.replace('Link created:', '').split(' - ')[0]}
             </Typography>
           </Box>
         </Alert>
-      )}<Snackbar
-        open={false} // Changed from snackbarOpen to false to hide the success notifications
-        autoHideDuration={5000}
-        onClose={handleSnackbarClose}
-        message={snackbarMessage}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }} // Changed from bottom to top
-        sx={{
-          '& .MuiSnackbarContent-root': {
-            bgcolor: '#10b981', // Success green
-            minWidth: '280px',
-            fontWeight: 600,
-            borderRadius: '16px',
-            boxShadow: '0 10px 25px rgba(16, 185, 129, 0.25)',
-            py: 1.2,
-            border: '1px solid rgba(16, 185, 129, 0.3)',
-            animation: 'slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1)', // Changed animation name
-            '@keyframes slideDown': { // Changed animation name and directions
-              '0%': { transform: 'translateY(-20px)', opacity: 0 },
-              '100%': { transform: 'translateY(0)', opacity: 1 }
-            }
-          }
-        }}
-      />
+      )}
+      
+      {/* Regular notifications for non-share messages */}
+      {!isShareNotification && (
+        <Snackbar
+          open={snackbarOpen} 
+          autoHideDuration={5000}
+          onClose={handleSnackbarClose}
+          message={snackbarMessage}        
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+          sx={{
+            '& .MuiSnackbarContent-root': {
+              bgcolor: '#10b981', // Success green
+              minWidth: '350px',
+              maxWidth: '80%',
+              fontWeight: 600,
+              borderRadius: '16px',
+              boxShadow: '0 10px 25px rgba(16, 185, 129, 0.25)',
+              py: 1.2,
+              px: 2,
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              wordBreak: 'break-all',
+              animation: 'slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              '@keyframes slideDown': {
+                '0%': { transform: 'translateY(-20px)', opacity: 0 },
+                '100%': { transform: 'translateY(0)', opacity: 1 }
+              }            }
+          }}
+        />
+      )}
     </>
   );
 };
