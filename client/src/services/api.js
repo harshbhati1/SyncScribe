@@ -571,7 +571,12 @@ export const transcriptionAPI = {
       // Pass through other errors
       return Promise.reject(error);
     });
-  }
+  },
+  // Method to append a chat message to a meeting (lightweight chat save)
+  appendChatMessage: (meetingId, message) => apiRequest(`/transcription/meeting/${meetingId}/chat`, {
+    method: 'PATCH',
+    body: JSON.stringify({ message })
+  }),
 };
 
 // Export for general use

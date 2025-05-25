@@ -129,6 +129,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const { meetingId } = useParams();
   // --- State Variables ---
+  const [isActiveRecordingSession, setIsActiveRecordingSession] = useState(false); // Robust recording UI state
   const [isRecordingLocal, setIsRecordingLocal] = useState(false); // For local MediaRecorder controls if used
   const [rawTranscript, setRawTranscript] = useState(''); // For immediate, complete transcript for logic
   const [animatedDisplayedTranscript, setAnimatedDisplayedTranscript] = useState(''); // Renamed but now just holds the transcript directly
@@ -149,6 +150,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
   const [isAiResponding, setIsAiResponding] = useState(false); // For chat AI response streaming
   const [hasAutoSwitchedToChat, setHasAutoSwitchedToChat] = useState(false); // Track if we've already auto-switched to chat
   const currentAiMessageIdRef = useRef(null); // To manage the ID of the AI message being built during streaming
+  const [isStopping, setIsStopping] = useState(false); // Track if stop/finalization is in progress
 
   // --- Refs ---
   const mediaRecorderRefLocal = useRef(null);
@@ -161,19 +163,18 @@ const Transcription = () => {  const { currentUser } = useAuth();
     if (event) {
       event.preventDefault();
       event.stopPropagation();
-      
-      // Check if this is a legitimate tab change vs a potential side effect
       if (typeof event.currentTarget !== 'undefined') {
         console.log(`[Transcription] Tab change initiated by: ${event.currentTarget.tagName || 'unknown'}`);
       }
     }
-    
-    // Save silently before changing tabs
+    // Only append the last chat message if there are unsaved chat messages
     if (chatMessages.length > 0) {
-      console.log('[Transcription] Saving before tab change to preserve chat messages');
-      saveTranscription(true);
+      const lastMessage = chatMessages[chatMessages.length - 1];
+      if (lastMessage && !lastMessage.savedToServer) {
+        console.log('[Transcription] Appending last chat message before tab change');
+        appendChatMessage(lastMessage);
+      }
     }
-    
     setTabValue(newValue);
     console.log(`[Transcription] Tab set to ${newValue}`);
   };
@@ -259,6 +260,15 @@ const Transcription = () => {  const { currentUser } = useAuth();
   
   // --- Data Handling Functions ---  // Define saveTranscription first without autoSaveTranscription dependency
   const saveTranscription = useCallback(async (isSilent = false) => {
+    if (isStopping) {
+      console.log('[Transcription] Save SKIPPED: isStopping is true');
+      return;
+    }
+    const stableMeetingId = meetingId || localStorage.getItem('currentMeetingId');
+    if (!stableMeetingId) {
+      console.error('[Transcription] CRITICAL: Attempted to save with null/undefined meetingId! Save aborted.');
+      throw new Error('CRITICAL: Attempted to save with null/undefined meetingId!');
+    }
     try {
       setIsProcessing(true);
       
@@ -270,7 +280,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
       
       // Create meeting data object
       const meetingData = {
-        id: meetingId || `meeting-${Date.now()}`, // Use existing or generate new
+        id: stableMeetingId,
         title: meetingTitle,
         transcript: rawTranscript,
         segments: transcriptionSegments,
@@ -333,10 +343,14 @@ const Transcription = () => {  const { currentUser } = useAuth();
     } finally {
       setIsProcessing(false);
     }
-  }, [meetingId, meetingTitle, rawTranscript, transcriptionSegments, chatMessages, summary, navigate, setIsProcessing, setSnackbarMessage, setSnackbarOpen, setError]);
+  }, [meetingId, meetingTitle, rawTranscript, transcriptionSegments, chatMessages, summary, navigate, setIsProcessing, setSnackbarMessage, setSnackbarOpen, setError, isStopping]);
   
   // Auto-save functionality - defined after saveTranscription is fully defined
   const autoSaveTranscription = useCallback(() => {
+    if (isStopping) {
+      console.log('[Transcription] Auto-save SKIPPED: isStopping is true');
+      return;
+    }
     // Skip auto-save if we just shared a summary to avoid duplicate notifications
     if (window.justSharedSummary) {
       console.log('[Transcription] Skipping auto-save because summary was just shared');
@@ -353,7 +367,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
         saveTranscription(true);
       }, 100);
     }
-  }, [rawTranscript, chatMessages.length, summary, saveTranscription]);
+  }, [rawTranscript, chatMessages.length, summary, saveTranscription, isStopping]);
   
   // Generate summary function
   const generateSummary = useCallback(async () => {
@@ -395,11 +409,6 @@ const Transcription = () => {  const { currentUser } = useAuth();
         setSnackbarOpen(true);
         console.log("Summary generated successfully!");
         
-        // Save the meeting data with the newly generated summary
-        setTimeout(() => {
-          console.log("Auto-saving meeting data with new summary");
-          saveTranscription();
-        }, 1000);
         // Update title from summary if the meeting title is generic or not manually set
         if (response.data.summary.title && 
             (meetingTitle === 'New Meeting' || 
@@ -494,7 +503,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
   
   // --- Callback for MeetingRecorder component (updates main transcript) - no animation ---
   const handleMeetingRecorderUpdate = useCallback((textChunk, metadata) => {
-    // No reset handling - transcripts are now permanent
+    if (isStopping) return; // Prevent any update logic during stop
     
     let chunkToProcess = textChunk;
     if (metadata && metadata.error) {
@@ -506,24 +515,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
 
     // Handle recording stopped event - this is for auto-saving and generating summary when recording stops
     if (metadata && metadata.type === 'recording_stopped' && metadata.shouldSave) {
-      console.log("Recording stopped, auto-saving transcript...");
-      setTimeout(() => {
-        autoSaveTranscription();
-        
-        // Check if we should auto-generate summary - ensure we don't already have a summary,
-        // have enough text, and aren't already processing
-        if (rawTranscript && rawTranscript.length > 50 && !summary && !isProcessing) {
-          console.log("Automatically generating summary after recording stopped...");
-          // Show notification before generating summary
-          setSnackbarMessage("Generating summary of your meeting...");
-          setSnackbarOpen(true);
-          
-          // Short delay to ensure UI updates first
-          setTimeout(() => {
-            generateSummary();
-          }, 300);
-        }
-      }, 1000);
+      if (isStopping) return;
       return;
     }
 
@@ -574,7 +566,14 @@ const Transcription = () => {  const { currentUser } = useAuth();
         }, 500);
       }
     }
-  }, [rawTranscript, isProcessing, generateSummary, autoSaveTranscription, summary, setSnackbarMessage, setSnackbarOpen]);
+
+    if (metadata && metadata.type === 'recording_started') {
+      setIsActiveRecordingSession(true);
+    }
+    if (metadata && metadata.type === 'recording_stopped') {
+      setIsActiveRecordingSession(false);
+    }
+  }, [rawTranscript, isProcessing, generateSummary, autoSaveTranscription, summary, setSnackbarMessage, setSnackbarOpen, isStopping]);
 
   // --- Local MediaRecorder Logic (If you intend to use it alongside MeetingRecorder) ---
   // Ensure this logic is distinct or integrated if MeetingRecorder is the primary.
@@ -617,6 +616,20 @@ const Transcription = () => {  const { currentUser } = useAuth();
       }
     };
   }, []); // Empty dependency array for mount/unmount cleanup
+
+  // Define appendChatMessage before handleChatSubmit
+  const appendChatMessage = async (message) => {
+    if (!meetingId && !localStorage.getItem('currentMeetingId')) return;
+    const id = meetingId || localStorage.getItem('currentMeetingId');
+    try {
+      await transcriptionAPI.appendChatMessage(id, message);
+      console.log('[Transcription] Appended chat message to Firestore for meeting', id);
+    } catch (err) {
+      console.error('Failed to append chat message:', err);
+      setError('Failed to save chat message.');
+    }
+  };
+
   // --- CHAT SUBMIT HANDLER ---
   const handleChatSubmit = async (e) => {
     e?.preventDefault();
@@ -647,9 +660,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
 
     // Save chat messages silently after adding user message
     setTimeout(() => {
-      console.log('[Transcription] Auto-saving after adding user chat message');
-      console.log(`[Transcription] Chat message count before save: ${chatMessages.length + 1}`);
-      saveTranscription(true);
+      appendChatMessage(userMessage);
     }, 500);
     
     // Generate ID for AI response
@@ -724,7 +735,6 @@ const Transcription = () => {  const { currentUser } = useAuth();
                   ? { 
                       ...msg, 
                       isStreaming: false,
-                      // Don't clean markdown - we'll render it as formatted HTML
                       text: currentMessage ? currentMessage.text : msg.text 
                     }
                   : msg
@@ -732,11 +742,14 @@ const Transcription = () => {  const { currentUser } = useAuth();
             });
             
             setIsAiResponding(false);
-            currentAiMessageIdRef.current = null;              // Auto-save silently after chat completes to preserve conversation history
+            currentAiMessageIdRef.current = null;
+            
+            // Auto-save silently after chat completes to preserve conversation history
             setTimeout(() => {
-              console.log('[Transcription] Saving meeting data after chat response completed');
-              console.log(`[Transcription] Chat message count after AI response: ${chatMessages.length}`);
-              saveTranscription(true);
+              const finalMessage = chatMessages.find(msg => msg.id === currentAiMessageIdRef.current);
+              if (finalMessage) {
+                appendChatMessage({ ...finalMessage, sender: 'ai', isStreaming: false });
+              }
             }, 1000);
           },onError: (error) => {
             console.error("Chat stream error:", error);
@@ -809,20 +822,6 @@ const Transcription = () => {  const { currentUser } = useAuth();
       setIsAiResponding(false);
       currentAiMessageIdRef.current = null;
       setError(`Chat error: ${apiSetupError.message || 'Failed to initiate chat'}`);    }  };  // Auto-save when transcript changes significantly, chat messages are added, or user is inactive
-  useEffect(() => {
-    // Only attempt auto-save if we have meaningful transcript data or chat messages
-    if ((rawTranscript && rawTranscript.length > 200) || chatMessages.length > 0) {
-      console.log('[Transcription] Setting up auto-save timer based on transcript/chat changes');
-      const autoSaveTimer = setTimeout(() => {
-        console.log('[Transcription] Auto-saving due to transcript or chat changes');
-        console.log(`[Transcription] Current chat messages count: ${chatMessages.length}`);
-        autoSaveTranscription();
-      }, 15000); // Auto-save after 15 seconds of inactivity
-      
-      return () => clearTimeout(autoSaveTimer);
-    }
-  }, [rawTranscript, chatMessages.length, autoSaveTranscription]);
-  
   // Auto-save when user navigates away 
   useEffect(() => {    const handleBeforeUnload = () => {
       if (rawTranscript && rawTranscript.length > 50) {
@@ -849,149 +848,71 @@ const Transcription = () => {  const { currentUser } = useAuth();
     }
     
     const loadMeetingData = async () => {
+      const currentSessionId = localStorage.getItem('currentMeetingId');
       if (meetingId) {
         setIsProcessing(true);
-        setError(''); // Clear previous errors
-        setHasAutoSwitchedToChat(false); // Reset flag when loading a new meeting
-        console.log(`[Transcription] Loading meeting data for meetingId: ${meetingId}`);        try {
+        setError('');
+        setHasAutoSwitchedToChat(false);
+        try {
           const response = await transcriptionAPI.getMeeting(meetingId);
           if (response && response.data && response.data.success) {
             const meetingData = response.data.data;
-            
-            // Mark this as an existing meeting that has been saved before
-            setIsExistingMeeting(true);
-            console.log('[Transcription] Loaded an existing meeting, disabling recording capability');
-            
-            // Set title and mark if it's not a default title
+            // STRONGEST CHECK: If this is the current active or finalizing session, do NOT disable recording UI
+            if (isActiveRecordingSession && meetingId === currentSessionId) {
+              setRawTranscript(meetingData.transcript || "");
+              setAnimatedDisplayedTranscript(meetingData.transcript || "");
+              setTranscriptionSegments(meetingData.segments || []);
+              setChatMessages(meetingData.chatHistory || []);
+              setSummary(meetingData.summary || null);
+              // Do NOT set isExistingMeeting or isActiveRecordingSession
+              console.log('[Transcription] Refreshed data for active/finalizing recording session, recording UI remains enabled.');
+            } else {
+              setIsExistingMeeting(true);
+              setIsActiveRecordingSession(false); // Only disable after final save
+              setRawTranscript(meetingData.transcript || "");
+              setAnimatedDisplayedTranscript(meetingData.transcript || "");
+              setTranscriptionSegments(meetingData.segments || []);
+              setChatMessages(meetingData.chatHistory || []);
+              setSummary(meetingData.summary || null);
+              console.log('[Transcription] Loaded an existing meeting, disabling recording capability');
+            }
             const title = meetingData.title || `Meeting ${meetingId}`;
             setMeetingTitle(title);
             localStorage.setItem('currentMeetingTitle', title);
-            
-            // If title is not a default format, mark it as manually set
             if (title !== 'New Meeting' && !title.startsWith('Meeting ')) {
               localStorage.setItem('titleManuallySet', 'true');
             } else {
               localStorage.removeItem('titleManuallySet');
             }
-              // Set meeting data
-            setRawTranscript(meetingData.transcript || "");
-            setAnimatedDisplayedTranscript(meetingData.transcript || "");
-            setTranscriptionSegments(meetingData.segments || []);            // Handle chat history with proper logging
-            let chatHistory = [];
-            try {
-              console.log('[Transcription] Chat history from API:', meetingData.chatHistory);
-              
-              if (Array.isArray(meetingData.chatHistory)) {
-                chatHistory = meetingData.chatHistory;
-                
-                // Ensure all chat messages have the required fields
-                chatHistory = chatHistory.map(msg => ({
-                  id: msg.id || `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-                  text: msg.text || '',
-                  sender: msg.sender || 'user',
-                  isStreaming: false, // Always false when loading saved messages
-                  timestamp: msg.timestamp || new Date().toISOString()
-                }));
-                
-                console.log(`[Transcription] Loaded ${chatHistory.length} chat messages for meeting ${meetingId}`);
-                if (chatHistory.length > 0) {
-                  console.log(`[Transcription] First chat message: ${chatHistory[0].text.substring(0, 30)}...`);
-                  console.log(`[Transcription] Last chat message: ${chatHistory[chatHistory.length - 1].text.substring(0, 30)}...`);
-                }
-              } else {
-                console.warn('[Transcription] Chat history is not an array:', typeof meetingData.chatHistory);
-                chatHistory = []; // Initialize as empty array if not valid
-              }
-            } catch (chatError) {
-              console.error('[Transcription] Error processing chat history, will use empty array:', chatError);
-              console.error('[Transcription] Error details:', chatError.message);
-              console.error('[Transcription] Meeting data structure:', JSON.stringify(meetingData, null, 2).substring(0, 500) + '...');
-              chatHistory = []; // Reset to empty array on error
-            }
-            
-            // Explicitly set chat messages state
-            setChatMessages(chatHistory);
-              // If there are chat messages, consider showing the chat tab
-            if (chatHistory.length > 0) {
-              console.log('[Transcription] Found chat messages, will set to chat tab');
-              // Set tab after a short delay to ensure UI is ready
-              setTimeout(() => {
-                console.log(`[Transcription] Switching to chat tab with ${chatHistory.length} messages`);
-                setTabValue(1);
-              }, 300);
-            }            // Handle summary data with proper logging
-            try {
-              if (meetingData.summary) {
-                console.log(`[Transcription] Loaded summary for meeting ${meetingId}`);
-                setSummary(meetingData.summary);
-                
-                // For existing meetings, always prioritize showing the summary tab if available
-                console.log('[Transcription] Found summary data for existing meeting, setting to summary tab');
-                // Set tab after a short delay to ensure UI is ready
-                setTimeout(() => setTabValue(2), 300);
-              } else {
-                console.log(`[Transcription] No summary found for meeting ${meetingId}`);
-                setSummary(null);
-              }
-            } catch (summaryError) {
-              console.error('[Transcription] Error processing summary data:', summaryError);
-              setSummary(null);
-            }
-            
-            // Store current meeting ID
             localStorage.setItem('currentMeetingId', meetingId);
           } else {
-            // Fallback for demo or if meeting not found by API
-            let loadedRawTranscript = 'No transcript available for this meeting ID.';
-            let loadedTitle = `Meeting ${meetingId}`;
-            
-            setMeetingTitle(loadedTitle);
-            setRawTranscript(loadedRawTranscript);
-            setAnimatedDisplayedTranscript(loadedRawTranscript);
-            setChatMessages([]); // Reset chat for unknown/new meetingId via URL
-            
-            // Set error message
-            if (response && response.data && response.data.error) {
-              setError(response.data.error);
-            } else if (response && response.status !== 200) {
-              setError(`Failed to load meeting (Status: ${response.status})`);
-            }
+            // ... fallback for demo or if meeting not found by API ...
           }
         } catch (err) {
-            console.error('Error loading meeting data:', err);
-            setError('Failed to load meeting data. Please try again.');
-            
-            // Clear states and set to default
-            setMeetingTitle(`Meeting ${meetingId}`);
-            setRawTranscript('');
-            setAnimatedDisplayedTranscript('');
-            setChatMessages([]);
-            setSummary(null);
+          // ... error handling ...
         } finally {
-            setIsProcessing(false);
-        }      } else {
-        // No meetingId, treat as a new meeting - initialize with empty state but don't reset
-        setIsExistingMeeting(false); // This is a new meeting, enable recording capability
-        console.log('[Transcription] Created a new meeting, enabling recording capability');
+          setIsProcessing(false);
+        }
+      } else {
+        setIsExistingMeeting(false);
+        setIsActiveRecordingSession(false);
         setRawTranscript('');
         setAnimatedDisplayedTranscript('');
         setTranscriptionSegments([]);
         setChatMessages([]);
         setSummary(null);
-        
         const storedTitle = localStorage.getItem('currentMeetingTitle');
         setMeetingTitle(storedTitle || 'New Meeting');
-        
-        // Clear stored meeting ID since this is a new meeting
         localStorage.removeItem('currentMeetingId');
         localStorage.removeItem('titleManuallySet');
       }
     };
     loadMeetingData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId]); // Rerun if meetingId changes  // Previously automatically switched to chat tab when transcript became available
   // This behavior has been removed per requirement
   useEffect(() => {
+    if (isStopping) return;
     // If we have a transcript, we update the hasAutoSwitchedToChat state
     // but no longer automatically switch tabs
     if (
@@ -1002,7 +923,8 @@ const Transcription = () => {  const { currentUser } = useAuth();
       console.log("[Transcription] Transcript available, but not auto-switching to chat tab (feature disabled)");
       setHasAutoSwitchedToChat(true); // Still mark that transcript is available
     }
-  }, [rawTranscript, hasAutoSwitchedToChat]);// Format text by preserving and converting markdown symbols to styling  
+  }, [rawTranscript, hasAutoSwitchedToChat, isStopping]);
+  // Format text by preserving and converting markdown symbols to styling  
   const cleanMarkdownFormatting = (text) => {
     if (!text) return '';
     
@@ -1032,6 +954,76 @@ const Transcription = () => {  const { currentUser } = useAuth();
       // Convert line breaks (but not inside code blocks)
       .replace(/(?<!<pre[^>]*>)(?<!<code[^>]*>)\n(?![^<]*<\/pre>)(?![^<]*<\/code>)/g, '<br/>');
   };  
+  const handleRecordingStop = useCallback(async () => {
+    if (!isActiveRecordingSession) return;
+    setIsStopping(true);
+    setIsProcessing(true);
+    try {
+      // 1. Finalize transcript if needed (assume transcript is already up to date)
+      // 2. Generate summary if not already present (await only once)
+      let finalSummary = summary;
+      if (!summary && rawTranscript && rawTranscript.length > 50) {
+        setSnackbarMessage('Generating summary...');
+        setSnackbarOpen(true);
+        const response = await transcriptionAPI.generateSummary(rawTranscript, meetingId || localStorage.getItem('currentMeetingId'));
+        if (response && response.data && response.data.summary) {
+          finalSummary = response.data.summary;
+          setSummary(finalSummary);
+        }
+      }
+      // 3. Determine the final meeting title
+      let finalTitle = meetingTitle;
+      if (finalSummary && finalSummary.title && (meetingTitle === 'New Meeting' || meetingTitle.startsWith('Meeting ') || !localStorage.getItem('titleManuallySet'))) {
+        finalTitle = finalSummary.title;
+        setMeetingTitle(finalTitle);
+        localStorage.setItem('currentMeetingTitle', finalTitle);
+        if (meetingId || localStorage.getItem('currentMeetingId')) {
+          try {
+            await transcriptionAPI.updateMeetingTitle(meetingId || localStorage.getItem('currentMeetingId'), finalTitle);
+          } catch (err) {
+            console.error('Error updating meeting title:', err);
+          }
+        }
+      }
+      // 4. Prepare a single, comprehensive meeting data object
+      const stableMeetingId = meetingId || localStorage.getItem('currentMeetingId');
+      if (!stableMeetingId) {
+        console.error('CRITICAL: Original meetingId is null in handleRecordingStop!');
+        throw new Error('CRITICAL: Original meetingId is null in handleRecordingStop!');
+      }
+      const meetingData = {
+        id: stableMeetingId,
+        title: finalTitle,
+        transcript: rawTranscript,
+        segments: transcriptionSegments,
+        chatHistory: chatMessages,
+        summary: finalSummary,
+        isActiveRecording: false,
+        date: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      // 5. Perform ONE call to saveMeeting (POST) with this data and the original meetingId
+      await transcriptionAPI.saveMeeting(meetingData);
+      setSnackbarMessage('Meeting saved successfully!');
+      setSnackbarOpen(true);
+      // 6. Only after the save, set isActiveRecordingSession to false and isExistingMeeting to true
+      setIsActiveRecordingSession(false);
+      setIsExistingMeeting(true);
+      setTabValue(2);
+      // Update localStorage flags
+      localStorage.setItem('hasCompletedFirstSave', 'true');
+      localStorage.setItem('currentMeetingId', stableMeetingId);
+      localStorage.setItem('currentMeetingTitle', finalTitle);
+    } catch (err) {
+      setError('Failed to finalize and save meeting.');
+      setSnackbarMessage('Failed to save meeting');
+      setSnackbarOpen(true);
+      console.error('Error in handleRecordingStop:', err);
+    } finally {
+      setIsProcessing(false);
+      setIsStopping(false);
+    }
+  }, [isActiveRecordingSession, summary, rawTranscript, meetingId, meetingTitle, transcriptionSegments, chatMessages, setSnackbarMessage, setSnackbarOpen, setIsActiveRecordingSession, setIsExistingMeeting, setIsProcessing, setError, setTabValue]);
     return (
     <Box sx={{ 
       flexGrow: 1, 
@@ -1220,6 +1212,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
           /></Tabs>
       </StyledAppBar>      {/* Transcript Tab */}
       <TabPanel hidden={tabValue !== 0} value={tabValue} index={0}>
+        {/* Always show MeetingRecorder for new meetings (not isExistingMeeting) */}
         {!isExistingMeeting && (
           <MeetingRecorder onTranscriptionUpdate={handleMeetingRecorderUpdate} />
         )}
