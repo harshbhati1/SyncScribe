@@ -1007,8 +1007,14 @@ const Dashboard = () => {
                 >
                   Ask questions about your past meetings and conversations!
                 </Typography>
-              </Box>
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+              </Box>            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: { xs: 'column', sm: 'row' },
+              alignItems: 'center',
+              justifyContent: 'center', 
+              mt: { xs: 8, sm: 3 },
+              gap: { xs: 2, sm: 1 }
+            }}>
               <Paper
                 component="form"
                 sx={{ 
@@ -1016,7 +1022,6 @@ const Dashboard = () => {
                   alignItems: 'center', 
                   px: 2,
                   py: 0.5,
-                  mr: 1,
                   width: '100%',
                   maxWidth: '400px',
                   borderRadius: '20px',
@@ -1045,7 +1050,12 @@ const Dashboard = () => {
                 variant="contained"
                 color="primary"
                 startIcon={<MicIcon fontSize="small" />}
-                sx={{ fontSize: '0.8rem', py: 1 }}
+                sx={{ 
+                  fontSize: '0.8rem', 
+                  py: 1,
+                  width: { xs: '100%', sm: 'auto' },
+                  maxWidth: { xs: '400px', sm: 'none' }
+                }}
                 onClick={() => {
                   // For a new meeting, set default title and clear previous ID
                   localStorage.setItem('currentMeetingTitle', 'New Meeting');
