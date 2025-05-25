@@ -276,23 +276,17 @@ const Transcription = () => {  const { currentUser } = useAuth();
     try {
       setIsProcessing(true);
       
-      // Only show saving notification for explicit saves
-      if (!isSilent) {
-        setSnackbarMessage('Saving meeting data...');
-        setSnackbarOpen(true);
-      }
-      
       // Create meeting data object
       const meetingData = {
         id: stableMeetingId,
         title: meetingTitle,
         transcript: rawTranscript,
         segments: transcriptionSegments,
-        chatHistory: chatMessages, // Include chat history
-        summary: summary, // Include summary if available
-        date: new Date().toISOString(), // Always use current date/time
-        createdAt: meetingId ? undefined : new Date().toISOString(), // Set createdAt only for new meetings
-        updatedAt: new Date().toISOString() // Always update the updatedAt timestamp
+        chatHistory: chatMessages,
+        summary: summary,
+        date: new Date().toISOString(),
+        createdAt: meetingId ? undefined : new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
       
       // Log what we're saving for debugging purposes
@@ -307,7 +301,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
         id: msg.id || `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         text: msg.text || '',
         sender: msg.sender || 'user',
-        isStreaming: false, // Always false when saving
+        isStreaming: false,
         timestamp: msg.timestamp || new Date().toISOString()
       }));
       
@@ -330,18 +324,13 @@ const Transcription = () => {  const { currentUser } = useAuth();
         if (!meetingId) {
           navigate(`/transcription/${savedMeetingId}`);
         }
-        
-        // Show success message only for explicit saves
-        if (!isSilent) {
-          setSnackbarMessage('Meeting saved successfully!');
-          setSnackbarOpen(true);
-        }
       } else {
         setError('Failed to save meeting. Unexpected API response.');
+        setSnackbarMessage('Failed to save meeting');
+        setSnackbarOpen(true);
       }
     } catch (err) {
       console.error('Error saving meeting:', err);
-      // Show error notifications even for silent saves since they're important
       setError('Failed to save meeting. Please try again.');
       setSnackbarMessage('Failed to save meeting');
       setSnackbarOpen(true);    
@@ -399,19 +388,14 @@ const Transcription = () => {  const { currentUser } = useAuth();
       setTabValue(2); // Just switch to the summary tab
       return;
     }
-      try {
+    try {
       setIsProcessing(true);
       
-      // Show notification that we're generating a summary
-      setSnackbarMessage("Generating meeting summary... This may take a moment.");
-      setSnackbarOpen(true);
       console.log("Starting summary generation...");
-      const response = await transcriptionAPI.generateSummary(rawTranscript, meetingId);          if (response && response.data && response.data.summary) {
+      const response = await transcriptionAPI.generateSummary(rawTranscript, meetingId);          
+      if (response && response.data && response.data.summary) {
         setSummary(response.data.summary);
         setTabValue(2); // Switch to summary tab
-          // Set success snackbar message
-        setSnackbarMessage("Summary generated successfully!");
-        setSnackbarOpen(true);
         console.log("Summary generated successfully!");
         
         // Update title from summary if the meeting title is generic or not manually set
@@ -433,19 +417,23 @@ const Transcription = () => {  const { currentUser } = useAuth();
               console.error('Error updating meeting title from summary:', titleUpdateError);
             }
           }
-        }      } else {
-         setError(response?.data?.error || 'Failed to get summary content from API.');
-         setSnackbarMessage("Failed to generate summary. Please try again.");
-         setSnackbarOpen(true);
-         console.error("Summary generation failed:", response?.data?.error || 'Failed to get summary content from API');
-      }
-    } catch (err) {        console.error('Error generating summary:', err);
-        setError('API call to generate summary failed.');
+        }      
+      } else {
+        setError(response?.data?.error || 'Failed to get summary content from API.');
         setSnackbarMessage("Failed to generate summary. Please try again.");
         setSnackbarOpen(true);
-        console.error("Summary generation exception:", err.message || 'Unknown error');} finally {
-        setIsProcessing(false);
-    }  }, [rawTranscript, meetingId, meetingTitle, summary, setError, setSummary, setTabValue, setIsProcessing, setSnackbarMessage, setSnackbarOpen]);
+        console.error("Summary generation failed:", response?.data?.error || 'Failed to get summary content from API');
+      }
+    } catch (err) {        
+      console.error('Error generating summary:', err);
+      setError('API call to generate summary failed.');
+      setSnackbarMessage("Failed to generate summary. Please try again.");
+      setSnackbarOpen(true);
+      console.error("Summary generation exception:", err.message || 'Unknown error');
+    } finally {
+      setIsProcessing(false);
+    }  
+  }, [rawTranscript, meetingId, meetingTitle, summary, setError, setSummary, setTabValue, setIsProcessing, setSnackbarMessage, setSnackbarOpen]);
   
   // Function to share summary as a link
   const shareSummaryAsLink = useCallback(() => {
@@ -517,8 +505,6 @@ const Transcription = () => {  const { currentUser } = useAuth();
       // 2. Generate summary if not already present (await only once)
       let finalSummary = summary;
       if (!summary && rawTranscript && rawTranscript.length > 50) {
-        setSnackbarMessage('Generating summary...');
-        setSnackbarOpen(true);
         const response = await transcriptionAPI.generateSummary(rawTranscript, meetingId || localStorage.getItem('currentMeetingId'));
         if (response && response.data && response.data.summary) {
           finalSummary = response.data.summary;
@@ -575,8 +561,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
       console.log('[Transcription] handleRecordingStop: About to save final meeting data:', completeMeetingData);
       // 5. Perform ONE call to saveMeeting (POST) with this data and the original meetingId
       await transcriptionAPI.saveMeeting(completeMeetingData);
-      setSnackbarMessage('Meeting saved successfully!');
-      setSnackbarOpen(true);
+      
       // 6. Only after the save, set isActiveRecordingSession to false and isExistingMeeting to true
       console.log('[DEBUG setIsActiveFalse] Called from handleRecordingStop (final save)');
       setIsActiveRecordingSession(false);
