@@ -446,6 +446,11 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
 
       setRecording(true); 
 
+      // Notify parent that recording has started
+      if (onTranscriptionUpdate) {
+        onTranscriptionUpdate("", { type: "recording_started", timestamp: new Date().toISOString() });
+      }
+
       if (chunkIntervalIdRef.current) clearInterval(chunkIntervalIdRef.current);
       chunkIntervalIdRef.current = setInterval(() => {
         if (recordingRef.current) { 
@@ -480,23 +485,22 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
     console.log("[Recorder] Processing final audio chunk on stop.");
     await encodeAndSendCurrentAudio(true); 
 
+    // Notify parent that recording has stopped and transcript should be auto-saved
+    // We'll use a 'stopped' event type with an empty text
+    if (onTranscriptionUpdate) {
+      onTranscriptionUpdate("", {
+        type: 'recording_stopped',
+        isFinal: true,
+        shouldSave: true,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Only clean up audio processing after sending the recording_stopped event
     cleanupAudioProcessing(true); 
     
     setDisplayTime(0); 
     // setIsFinalizing(false) will be handled by internalProcessAudioChunk's finally block
-    
-    // Notify parent that recording has stopped and transcript should be auto-saved
-    // We'll use a 'stopped' event type with an empty text
-    if (onTranscriptionUpdate) {
-      setTimeout(() => {
-        onTranscriptionUpdate("", {
-          type: 'recording_stopped',
-          isFinal: true,
-          shouldSave: true,
-          timestamp: new Date().toISOString()
-        });
-      }, 2000); // Small delay to ensure final chunk is processed
-    }
   }, [encodeAndSendCurrentAudio, cleanupAudioProcessing, onTranscriptionUpdate]);
 
   useEffect(() => { processAudioChunkRef.current = internalProcessAudioChunk; }, [internalProcessAudioChunk]);

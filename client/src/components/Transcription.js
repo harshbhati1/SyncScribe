@@ -129,7 +129,11 @@ const Transcription = () => {  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const { meetingId } = useParams();
   // --- State Variables ---
-  const [isActiveRecordingSession, setIsActiveRecordingSession] = useState(false); // Robust recording UI state
+  const [isActiveRecordingSession, _setIsActiveRecordingSession] = useState(false);
+  const setIsActiveRecordingSession = (val) => {
+    console.log('[DEBUG setIsActiveRecordingSession] Setting isActiveRecordingSession to:', val, new Error().stack);
+    _setIsActiveRecordingSession(val);
+  };
   const [isRecordingLocal, setIsRecordingLocal] = useState(false); // For local MediaRecorder controls if used
   const [rawTranscript, setRawTranscript] = useState(''); // For immediate, complete transcript for logic
   const [animatedDisplayedTranscript, setAnimatedDisplayedTranscript] = useState(''); // Renamed but now just holds the transcript directly
@@ -314,6 +318,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
       };
       
       // Save meeting data to Firestore through API
+      console.log('[Transcription] About to save final meeting data:', finalMeetingData);
       const response = await transcriptionAPI.saveMeeting(finalMeetingData);
       
       if (response && response.data && response.data.meetingId) {
@@ -501,7 +506,99 @@ const Transcription = () => {  const { currentUser } = useAuth();
     }
     }, [summary, meetingTitle, setError, setSnackbarMessage, setSnackbarOpen, setIsProcessing]);
   
-  // --- Callback for MeetingRecorder component (updates main transcript) - no animation ---
+  // Place handleRecordingStop here
+  const handleRecordingStop = useCallback(async () => {
+    if (!isActiveRecordingSession) return;
+    setIsStopping(true);
+    setIsProcessing(true);
+    try {
+      console.log('[Transcription] handleRecordingStop: START');
+      // 1. Finalize transcript if needed (assume transcript is already up to date)
+      // 2. Generate summary if not already present (await only once)
+      let finalSummary = summary;
+      if (!summary && rawTranscript && rawTranscript.length > 50) {
+        setSnackbarMessage('Generating summary...');
+        setSnackbarOpen(true);
+        const response = await transcriptionAPI.generateSummary(rawTranscript, meetingId || localStorage.getItem('currentMeetingId'));
+        if (response && response.data && response.data.summary) {
+          finalSummary = response.data.summary;
+          setSummary(finalSummary);
+          console.log('[Transcription] handleRecordingStop: Summary generated:', finalSummary);
+        } else {
+          console.log('[Transcription] handleRecordingStop: No summary returned from API. Response:', response);
+        }
+      } else {
+        console.log('[Transcription] handleRecordingStop: Using existing summary:', finalSummary);
+      }
+      // 3. Determine the final meeting title
+      let finalTitle = meetingTitle;
+      if (
+        finalSummary &&
+        finalSummary.title &&
+        (meetingTitle === 'New Meeting' ||
+          meetingTitle.startsWith('Meeting ') ||
+          !localStorage.getItem('titleManuallySet'))
+      ) {
+        finalTitle = finalSummary.title;
+        setMeetingTitle(finalTitle);
+        localStorage.setItem('currentMeetingTitle', finalTitle);
+        console.log('[Transcription] handleRecordingStop: Title updated to:', finalTitle);
+        if (meetingId || localStorage.getItem('currentMeetingId')) {
+          try {
+            await transcriptionAPI.updateMeetingTitle(meetingId || localStorage.getItem('currentMeetingId'), finalTitle);
+            console.log('[Transcription] handleRecordingStop: Title updated in backend:', finalTitle);
+          } catch (err) {
+            console.error('[Transcription] handleRecordingStop: Error updating meeting title:', err);
+          }
+        }
+      } else {
+        console.log('[Transcription] handleRecordingStop: Using existing title:', finalTitle);
+      }
+      // 4. Prepare a single, comprehensive meeting data object
+      const stableMeetingId = meetingId || localStorage.getItem('currentMeetingId');
+      console.log('[Transcription] handleRecordingStop: stableMeetingId:', stableMeetingId);
+      if (!stableMeetingId) {
+        console.error('CRITICAL: Original meetingId is null in handleRecordingStop!');
+        throw new Error('CRITICAL: Original meetingId is null in handleRecordingStop!');
+      }
+      const completeMeetingData = {
+        id: stableMeetingId,
+        title: finalTitle,
+        transcript: rawTranscript,
+        segments: transcriptionSegments,
+        chatHistory: chatMessages,
+        summary: finalSummary,
+        isActiveRecording: false,
+        date: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      console.log('[Transcription] handleRecordingStop: About to save final meeting data:', completeMeetingData);
+      // 5. Perform ONE call to saveMeeting (POST) with this data and the original meetingId
+      await transcriptionAPI.saveMeeting(completeMeetingData);
+      setSnackbarMessage('Meeting saved successfully!');
+      setSnackbarOpen(true);
+      // 6. Only after the save, set isActiveRecordingSession to false and isExistingMeeting to true
+      console.log('[DEBUG setIsActiveFalse] Called from handleRecordingStop (final save)');
+      setIsActiveRecordingSession(false);
+      setIsExistingMeeting(true);
+      setTabValue(2);
+      // Update localStorage flags
+      localStorage.setItem('hasCompletedFirstSave', 'true');
+      localStorage.setItem('currentMeetingId', stableMeetingId);
+      localStorage.setItem('currentMeetingTitle', finalTitle);
+      console.log('[Transcription] handleRecordingStop: END - Save successful');
+    } catch (err) {
+      setError('Failed to finalize and save meeting.');
+      setSnackbarMessage('Failed to save meeting');
+      setSnackbarOpen(true);
+      console.error('[Transcription] handleRecordingStop: ERROR', err, err?.stack);
+    } finally {
+      setIsProcessing(false);
+      setIsStopping(false);
+    }
+  }, [isActiveRecordingSession, summary, rawTranscript, meetingId, meetingTitle, transcriptionSegments, chatMessages, setSnackbarMessage, setSnackbarOpen, setIsActiveRecordingSession, setIsExistingMeeting, setIsProcessing, setError, setTabValue]);
+
+  // Then define handleMeetingRecorderUpdate after handleRecordingStop
   const handleMeetingRecorderUpdate = useCallback((textChunk, metadata) => {
     if (isStopping) return; // Prevent any update logic during stop
     
@@ -515,7 +612,10 @@ const Transcription = () => {  const { currentUser } = useAuth();
 
     // Handle recording stopped event - this is for auto-saving and generating summary when recording stops
     if (metadata && metadata.type === 'recording_stopped' && metadata.shouldSave) {
-      if (isStopping) return;
+      console.log('[Transcription] handleMeetingRecorderUpdate: About to call handleRecordingStop. isActiveRecordingSession:', isActiveRecordingSession);
+      // Remove the isActiveRecordingSession check since we want to call handleRecordingStop regardless
+      // The handleRecordingStop function will handle its own state management
+      handleRecordingStop();
       return;
     }
 
@@ -542,38 +642,19 @@ const Transcription = () => {  const { currentUser } = useAuth();
     
     if (metadata) {
       setTranscriptionSegments(prev => [...prev, { ...metadata, text: chunkToProcess || "" }]);
-        // Auto-generate summary when the final transcript chunk is received, but only if we don't already have a summary
-      if ((metadata.isFinal === true || metadata.type === 'segment_final_empty') && 
-          !isProcessing && // Avoid duplicate calls
-          rawTranscript && 
-          rawTranscript.length > 50 &&
-          !summary) { // Only generate if we don't already have a summary
-        console.log("Recording stopped, checking if we need to generate summary...");
-        // Use setTimeout to ensure we have the final rawTranscript with the last chunk
-        setTimeout(() => {
-          // Double-check all conditions again to avoid race conditions
-          if (!summary && !isProcessing && rawTranscript && rawTranscript.length > 50) {
-            console.log("Automatically generating summary...");
-            // Show notification before generating summary
-            setSnackbarMessage("Generating summary of your meeting...");
-            setSnackbarOpen(true);
-            
-            // Short delay to ensure UI updates first
-            setTimeout(() => {
-              generateSummary();
-            }, 300);
-          }
-        }, 500);
-      }
     }
 
     if (metadata && metadata.type === 'recording_started') {
       setIsActiveRecordingSession(true);
+      if (!meetingId) {
+        // Generate a unique session ID
+        const sessionId = `meeting-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        localStorage.setItem('currentMeetingId', sessionId);
+        console.log(`[Transcription] New session started. ID: ${sessionId}. Navigating...`);
+        navigate(`/transcription/${sessionId}`);
+      }
     }
-    if (metadata && metadata.type === 'recording_stopped') {
-      setIsActiveRecordingSession(false);
-    }
-  }, [rawTranscript, isProcessing, generateSummary, autoSaveTranscription, summary, setSnackbarMessage, setSnackbarOpen, isStopping]);
+  }, [rawTranscript, isProcessing, generateSummary, autoSaveTranscription, summary, setSnackbarMessage, setSnackbarOpen, isStopping, handleRecordingStop, isActiveRecordingSession, meetingId, navigate]);
 
   // --- Local MediaRecorder Logic (If you intend to use it alongside MeetingRecorder) ---
   // Ensure this logic is distinct or integrated if MeetingRecorder is the primary.
@@ -868,13 +949,17 @@ const Transcription = () => {  const { currentUser } = useAuth();
               console.log('[Transcription] Refreshed data for active/finalizing recording session, recording UI remains enabled.');
             } else {
               setIsExistingMeeting(true);
-              setIsActiveRecordingSession(false); // Only disable after final save
+              // Only set isActiveRecordingSession to false if we're not in an active recording session
+              if (!isActiveRecordingSession) {
+                console.log('[DEBUG setIsActiveFalse] Called from loadMeetingData (existing meeting block) - but only because isActiveRecordingSession was already false');
+                setIsActiveRecordingSession(false);
+              }
               setRawTranscript(meetingData.transcript || "");
               setAnimatedDisplayedTranscript(meetingData.transcript || "");
               setTranscriptionSegments(meetingData.segments || []);
               setChatMessages(meetingData.chatHistory || []);
               setSummary(meetingData.summary || null);
-              console.log('[Transcription] Loaded an existing meeting, disabling recording capability');
+              console.log('[Transcription] Loaded an existing meeting, recording UI state preserved');
             }
             const title = meetingData.title || `Meeting ${meetingId}`;
             setMeetingTitle(title);
@@ -895,7 +980,11 @@ const Transcription = () => {  const { currentUser } = useAuth();
         }
       } else {
         setIsExistingMeeting(false);
-        setIsActiveRecordingSession(false);
+        // Only set isActiveRecordingSession to false if we're not in an active recording session
+        if (!isActiveRecordingSession) {
+          console.log('[DEBUG setIsActiveFalse] Called from loadMeetingData (new meeting/no meetingId block) - but only because isActiveRecordingSession was already false');
+          setIsActiveRecordingSession(false);
+        }
         setRawTranscript('');
         setAnimatedDisplayedTranscript('');
         setTranscriptionSegments([]);
@@ -954,76 +1043,6 @@ const Transcription = () => {  const { currentUser } = useAuth();
       // Convert line breaks (but not inside code blocks)
       .replace(/(?<!<pre[^>]*>)(?<!<code[^>]*>)\n(?![^<]*<\/pre>)(?![^<]*<\/code>)/g, '<br/>');
   };  
-  const handleRecordingStop = useCallback(async () => {
-    if (!isActiveRecordingSession) return;
-    setIsStopping(true);
-    setIsProcessing(true);
-    try {
-      // 1. Finalize transcript if needed (assume transcript is already up to date)
-      // 2. Generate summary if not already present (await only once)
-      let finalSummary = summary;
-      if (!summary && rawTranscript && rawTranscript.length > 50) {
-        setSnackbarMessage('Generating summary...');
-        setSnackbarOpen(true);
-        const response = await transcriptionAPI.generateSummary(rawTranscript, meetingId || localStorage.getItem('currentMeetingId'));
-        if (response && response.data && response.data.summary) {
-          finalSummary = response.data.summary;
-          setSummary(finalSummary);
-        }
-      }
-      // 3. Determine the final meeting title
-      let finalTitle = meetingTitle;
-      if (finalSummary && finalSummary.title && (meetingTitle === 'New Meeting' || meetingTitle.startsWith('Meeting ') || !localStorage.getItem('titleManuallySet'))) {
-        finalTitle = finalSummary.title;
-        setMeetingTitle(finalTitle);
-        localStorage.setItem('currentMeetingTitle', finalTitle);
-        if (meetingId || localStorage.getItem('currentMeetingId')) {
-          try {
-            await transcriptionAPI.updateMeetingTitle(meetingId || localStorage.getItem('currentMeetingId'), finalTitle);
-          } catch (err) {
-            console.error('Error updating meeting title:', err);
-          }
-        }
-      }
-      // 4. Prepare a single, comprehensive meeting data object
-      const stableMeetingId = meetingId || localStorage.getItem('currentMeetingId');
-      if (!stableMeetingId) {
-        console.error('CRITICAL: Original meetingId is null in handleRecordingStop!');
-        throw new Error('CRITICAL: Original meetingId is null in handleRecordingStop!');
-      }
-      const meetingData = {
-        id: stableMeetingId,
-        title: finalTitle,
-        transcript: rawTranscript,
-        segments: transcriptionSegments,
-        chatHistory: chatMessages,
-        summary: finalSummary,
-        isActiveRecording: false,
-        date: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      // 5. Perform ONE call to saveMeeting (POST) with this data and the original meetingId
-      await transcriptionAPI.saveMeeting(meetingData);
-      setSnackbarMessage('Meeting saved successfully!');
-      setSnackbarOpen(true);
-      // 6. Only after the save, set isActiveRecordingSession to false and isExistingMeeting to true
-      setIsActiveRecordingSession(false);
-      setIsExistingMeeting(true);
-      setTabValue(2);
-      // Update localStorage flags
-      localStorage.setItem('hasCompletedFirstSave', 'true');
-      localStorage.setItem('currentMeetingId', stableMeetingId);
-      localStorage.setItem('currentMeetingTitle', finalTitle);
-    } catch (err) {
-      setError('Failed to finalize and save meeting.');
-      setSnackbarMessage('Failed to save meeting');
-      setSnackbarOpen(true);
-      console.error('Error in handleRecordingStop:', err);
-    } finally {
-      setIsProcessing(false);
-      setIsStopping(false);
-    }
-  }, [isActiveRecordingSession, summary, rawTranscript, meetingId, meetingTitle, transcriptionSegments, chatMessages, setSnackbarMessage, setSnackbarOpen, setIsActiveRecordingSession, setIsExistingMeeting, setIsProcessing, setError, setTabValue]);
     return (
     <Box sx={{ 
       flexGrow: 1, 
