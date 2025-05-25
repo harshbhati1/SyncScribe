@@ -717,15 +717,14 @@ const Transcription = () => {  const { currentUser } = useAuth();
     if (!chatQuery.trim() || isAiResponding) return;
 
     const currentTextQuery = chatQuery.trim();
-    
     // Create a sanitized history to send to backend
     const historyToSend = chatMessages.map(msg => ({
-        sender: msg.sender,
-        text: msg.text
+      sender: msg.sender,
+      text: msg.text
     }));
-    
+
     console.log(`[Transcription] Current chat history before adding new message: ${chatMessages.length} messages`);
-    
+
     // Add user message to chat history
     const userMessage = {
       id: `user-${Date.now()}`,
@@ -733,27 +732,35 @@ const Transcription = () => {  const { currentUser } = useAuth();
       sender: 'user',
       timestamp: new Date().toISOString()
     };
-    
+
     // Update UI immediately
     setChatMessages(prevMessages => [...prevMessages, userMessage]);
     setChatQuery(''); // Clear input field
     setIsAiResponding(true);
 
     // Save chat messages silently after adding user message
-    setTimeout(() => {
+    if (!isActiveRecordingSession && isExistingMeeting) {
+      const id = meetingId || localStorage.getItem('currentMeetingId');
+      console.log('[Chat] Appending chat message to Firestore (reopened meeting):', id, userMessage);
       appendChatMessage(userMessage);
-    }, 500);
-    
+    } else {
+      setTimeout(() => {
+        appendChatMessage(userMessage);
+      }, 500);
+    }
+
     // Generate ID for AI response
-    currentAiMessageIdRef.current = `ai-${Date.now()}`;
-    
+    const generatedAiId = `ai-${Date.now()}`;
+    currentAiMessageIdRef.current = generatedAiId;
+    console.log('[AI Stream Start] Placeholder ID:', generatedAiId, 'Ref set to:', currentAiMessageIdRef.current);
+
     // Add placeholder for AI response
     setChatMessages(prevMessages => [
       ...prevMessages,
-      { 
-        id: currentAiMessageIdRef.current, 
-        text: "", 
-        sender: 'ai', 
+      {
+        id: generatedAiId,
+        text: "",
+        sender: 'ai',
         isStreaming: true
       }
     ]);
@@ -761,119 +768,112 @@ const Transcription = () => {  const { currentUser } = useAuth();
     // Switch to chat tab if not already there
     if (tabValue !== 1) {
       setTabValue(1);
-    }    try {
+    }
+
+    try {
       console.log("Sending chat request with transcript length:", rawTranscript?.length || 0);
-      
-      // Check if transcript is too short
-      if (!rawTranscript || rawTranscript.length < 30) {
-        console.warn("Transcript is very short or empty, adding a note to the chat history");
-        // Add a note message before sending the request
-        setChatMessages(prevMessages => [
-          ...prevMessages.filter(msg => msg.id !== currentAiMessageIdRef.current),          { 
-            id: currentAiMessageIdRef.current, 
-            text: "Note: The transcript appears to be very short or empty. I'll do my best to answer, but might be limited in what I can reference.", 
-            sender: 'ai', 
-            isStreaming: false
-          }
-        ]);
-        
-        // Allow a small delay for the user to see the message
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        // Create a new message ID for the actual answer
-        currentAiMessageIdRef.current = `ai-${Date.now()}`;
-        setChatMessages(prevMessages => [
-          ...prevMessages,          { 
-            id: currentAiMessageIdRef.current, 
-            text: "", 
-            sender: 'ai', 
-            isStreaming: true
-          }
-        ]);
-      }
-        await transcriptionAPI.chatWithTranscript(
-        rawTranscript,  // The full transcript text
-        historyToSend,  // Previous chat messages
-        currentTextQuery, // Current user query
-        {          onChunk: (textChunk) => {
-            // Preserve markdown formatting in the text chunk
-            // It will be converted to HTML when rendering with dangerouslySetInnerHTML
-            
-            // Update the streaming message with each chunk, preserving the markdown
+
+      let aiResponseText = "";
+      await transcriptionAPI.chatWithTranscript(
+        rawTranscript,
+        historyToSend,
+        currentTextQuery,
+        {
+          onChunk: (textChunk) => {
+            console.log('[AI onChunk] currentAiMessageIdRef:', currentAiMessageIdRef.current, 'Chunk:', textChunk);
+            aiResponseText += textChunk;
             setChatMessages(prevMessages =>
-              prevMessages.map(msg =>
-                msg.id === currentAiMessageIdRef.current
-                  ? { ...msg, text: (msg.text || "") + textChunk }
-                  : msg
-              )
-            );          },onEnd: () => {
-            // Mark message as complete when stream ends
-            setChatMessages(prevMessages => {
-              const currentMessage = prevMessages.find(msg => msg.id === currentAiMessageIdRef.current);
-              
-              return prevMessages.map(msg =>
-                msg.id === currentAiMessageIdRef.current
-                  ? { 
-                      ...msg, 
-                      isStreaming: false,
-                      text: currentMessage ? currentMessage.text : msg.text 
-                    }
-                  : msg
-              );
-            });
-            
+              prevMessages.map(msg => {
+                if (msg.id === currentAiMessageIdRef.current) {
+                  console.log('[AI onChunk] Before update:', msg);
+                  const updatedMsg = { ...msg, text: (msg.text || "") + textChunk };
+                  console.log('[AI onChunk] After update:', updatedMsg);
+                  return updatedMsg;
+                }
+                return msg;
+              })
+            );
+          },
+          onEnd: () => {
+            const finalAccumulatedText = aiResponseText; // Capture the full text at the start
+            const messageIdToFinalize = currentAiMessageIdRef.current;
+
             setIsAiResponding(false);
-            currentAiMessageIdRef.current = null;
-            
-            // Auto-save silently after chat completes to preserve conversation history
-            setTimeout(() => {
-              const finalMessage = chatMessages.find(msg => msg.id === currentAiMessageIdRef.current);
-              if (finalMessage) {
-                appendChatMessage({ ...finalMessage, sender: 'ai', isStreaming: false });
+
+            if (messageIdToFinalize) {
+              // 1. Finalize the message in the UI state
+              console.log(`[AI onEnd UI Update] Finalizing UI for msg ID: ${messageIdToFinalize} with text: "${finalAccumulatedText}"`);
+              setChatMessages(prevMessages =>
+                prevMessages.map(msg =>
+                  msg.id === messageIdToFinalize
+                    ? { ...msg, isStreaming: false, text: finalAccumulatedText }
+                    : msg
+                )
+              );
+
+              // 2. Prepare and save the message (already working)
+              const aiMessageToSave = {
+                id: messageIdToFinalize,
+                text: finalAccumulatedText,
+                sender: 'ai',
+                timestamp: new Date().toISOString()
+              };
+              const currentMeetingId = meetingId || localStorage.getItem('currentMeetingId');
+              console.log('[AI Chat Save] Attempting to append AI message ONCE. ID:', currentMeetingId, 'Message:', aiMessageToSave);
+              if ((!isActiveRecordingSession && isExistingMeeting) || isActiveRecordingSession) {
+                appendChatMessage(aiMessageToSave);
               }
-            }, 1000);
-          },onError: (error) => {
+
+              currentAiMessageIdRef.current = null; // Nullify ref AFTER all operations for this ID
+            } else {
+              console.warn('[AI onEnd] No currentAiMessageIdRef to process.');
+            }
+            aiResponseText = ""; // Reset accumulator for the next AI response
+          },
+          onError: (error) => {
             console.error("Chat stream error:", error);
             // Format error message based on type
             let formattedErrorMsg = error.friendlyMessage || error.message || 'Unknown error';
-            
+
             if (error.code === 'RATE_LIMITED' || formattedErrorMsg.includes('rate limit') || formattedErrorMsg.includes('429')) {
               formattedErrorMsg = "😓 Rate limit reached. I need to take a short break. Please try again in 30-60 seconds.";
             } else if (error.code === 'SERVER_ERROR' || formattedErrorMsg.includes('Server error') || formattedErrorMsg.includes('500')) {
               formattedErrorMsg = "😓 Sorry, I'm having trouble connecting to the server. This might be due to a temporary issue. Please try again in a moment.";
             }
-            
+
             // Update the message with error information
             setChatMessages(prevMessages => {
               // Find the specific message that needs updating
               const messageToUpdate = prevMessages.find(msg => msg.id === currentAiMessageIdRef.current);
-              
+
               // If the message exists and already has substantial content
               if (messageToUpdate && messageToUpdate.text && messageToUpdate.text.length > 20) {
                 // Keep existing content but add error notice
                 return prevMessages.map(msg =>
                   msg.id === currentAiMessageIdRef.current
-                    ? { 
-                        ...msg, 
-                        text: `${msg.text}\n\n[Error: Communication was interrupted. ${formattedErrorMsg}]`, 
-                        isStreaming: false, 
-                        isError: true 
+                    ? {
+                        ...msg,
+                        text: `${msg.text}\n\n[Error: Communication was interrupted. ${formattedErrorMsg}]`,
+                        isStreaming: false,
+                        isError: true
                       }
                     : msg
                 );
               } else {
                 // Replace with just the error message if there's no substantial content
                 return prevMessages.map(msg =>
-                  msg.id === currentAiMessageIdRef.current                    ? { 
-                        ...msg, 
-                        text: cleanMarkdownFormatting(formattedErrorMsg), 
-                        isStreaming: false, 
-                        isError: true 
+                  msg.id === currentAiMessageIdRef.current
+                    ? {
+                        ...msg,
+                        text: cleanMarkdownFormatting(formattedErrorMsg),
+                        isStreaming: false,
+                        isError: true
                       }
                     : msg
                 );
               }
-            });setIsAiResponding(false);
+            });
+            setIsAiResponding(false);
             currentAiMessageIdRef.current = null;
             // Only set the global error for major failures, not just stream interruptions
             setChatMessages(prevMsgs => {
@@ -886,23 +886,28 @@ const Transcription = () => {  const { currentUser } = useAuth();
           }
         }
       );
-    } catch (apiSetupError) {      console.error("Error setting up chat stream:", apiSetupError);
+    } catch (apiSetupError) {
+      console.error("Error setting up chat stream:", apiSetupError);
       // Handle error in API setup
       setChatMessages(prevMsgs =>
-          prevMsgs.map(msg =>
-              msg.id === currentAiMessageIdRef.current
-              ? { 
-                  ...msg, 
-                  text: `I'm sorry, I couldn't process your request: ${apiSetupError.message || 'Failed to connect to chat service'}. Please try again in a moment.`, 
-                  isStreaming: false, 
-                  isError: true 
-                }
-              : msg
-          )
+        prevMsgs.map(msg =>
+          msg.id === currentAiMessageIdRef.current
+            ? {
+                ...msg,
+                text: `I'm sorry, I couldn't process your request: ${apiSetupError.message || 'Failed to connect to chat service'}. Please try again in a moment.`,
+                isStreaming: false,
+                isError: true
+              }
+            : msg
+        )
       );
       setIsAiResponding(false);
       currentAiMessageIdRef.current = null;
-      setError(`Chat error: ${apiSetupError.message || 'Failed to initiate chat'}`);    }  };  // Auto-save when transcript changes significantly, chat messages are added, or user is inactive
+      setError(`Chat error: ${apiSetupError.message || 'Failed to initiate chat'}`);
+    }
+  };
+
+  // Auto-save when transcript changes significantly, chat messages are added, or user is inactive
   // Auto-save when user navigates away 
   useEffect(() => {    const handleBeforeUnload = () => {
       if (rawTranscript && rawTranscript.length > 50) {

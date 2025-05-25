@@ -12,6 +12,7 @@ const authMiddleware = require('../middlewares/auth.middleware');
 const { getErrorResponse } = require('../utils/error.utils');
 const { initializeGemini } = require('../config/gemini.config'); // Ensure path is correct
 const { admin } = require('../config/firebase.config'); // Import Firebase Admin
+const { FieldValue } = require('firebase-admin/firestore'); // Add at the top if not already present
 
 // --- DEBUGGING FLAG ---
 const SAVE_AUDIO_FOR_DEBUG = true; // General flag to enable saving
@@ -304,6 +305,39 @@ router.delete('/meeting/:meetingId', authMiddleware, async (req, res) => {
       success: false,
       error: 'Failed to delete meeting'
     });
+  }
+});
+
+// PATCH endpoint to append a chat message to a meeting's chatHistory
+router.patch('/meeting/:meetingId/chat', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const { meetingId } = req.params;
+    const { message } = req.body;
+
+    // Validate input
+    if (!meetingId || !message || !message.id || !message.text || !message.sender || !message.timestamp) {
+      return res.status(400).json({ error: 'Missing meetingId or message fields.' });
+    }
+
+    const meetingRef = db.collection('users').doc(userId).collection('meetings').doc(meetingId);
+    const meetingDoc = await meetingRef.get();
+
+    if (!meetingDoc.exists) {
+      return res.status(404).json({ error: 'Meeting not found.' });
+    }
+
+    // Append the new message to chatHistory
+    await meetingRef.update({
+      chatHistory: FieldValue.arrayUnion(message)
+    });
+
+    console.log(`[PATCH /api/transcription/meeting/${meetingId}/chat] Appended message for user ${userId}:`, message);
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('[PATCH /api/transcription/meeting/:meetingId/chat] Error:', err);
+    return res.status(500).json({ error: 'Failed to append chat message.' });
   }
 });
 
