@@ -274,11 +274,8 @@ const SharedSummary = () => {
                 </Box>
               )}
             </>
-          )}
-        </CardContent>
-      </SummaryCard>
-
-      <Box textAlign="center" mt={4}>
+          )}        </CardContent>
+      </SummaryCard>      <Box textAlign="center" mt={4} mb={8} pb={4}>
         <Typography variant="body2" color="text.secondary" gutterBottom>
           This summary was shared via TwinMind
         </Typography>

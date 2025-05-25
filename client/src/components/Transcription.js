@@ -21,8 +21,9 @@ import {
   Card,
   CardContent,
   AppBar,
-  Toolbar,
-  Snackbar,
+  Toolbar,  Snackbar,
+  Container,
+  useTheme,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import SaveIcon from '@mui/icons-material/Save';
@@ -52,14 +53,30 @@ const StyledAppBar = styled(AppBar)(({ theme }) => ({
   borderBottom: '1px solid #e4e4e7',
   color: '#2d3748',
   transition: 'box-shadow 0.3s ease',
+  // Mobile responsive toolbar
+  '& .MuiToolbar-root': {
+    minHeight: { xs: '56px', sm: '64px' },
+    padding: { xs: '0 8px', sm: '0 16px' },
+    [theme.breakpoints.down('sm')]: {
+      paddingLeft: '8px',
+      paddingRight: '8px',
+    }
+  }
 }));
 
 const TabPanel = styled(Box)(({ theme }) => ({
-  padding: theme.spacing(2),
+  padding: theme.spacing(1, 1), // Reduced padding for mobile
   flexGrow: 1,
   overflow: 'auto',
   backgroundColor: '#f8fafc',
   borderRadius: '0 0 8px 8px',
+  // Responsive padding
+  [theme.breakpoints.up('sm')]: {
+    padding: theme.spacing(2, 2),
+  },
+  [theme.breakpoints.up('md')]: {
+    padding: theme.spacing(2, 3),
+  },
   // Ensuring the TabPanel takes up available vertical space
   // The parent Box of Transcription.js already has display: 'flex', flexDirection: 'column', height: '100vh'
   // So, flexGrow: 1 on TabPanel should make it expand.
@@ -128,6 +145,7 @@ const ActionButton = styled(Button)(({ theme }) => ({
 const Transcription = () => {  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const { meetingId } = useParams();
+  const theme = useTheme(); // Add theme hook for responsive breakpoints
   // --- State Variables ---
   const [isActiveRecordingSession, _setIsActiveRecordingSession] = useState(false);
   const setIsActiveRecordingSession = (val) => {
@@ -1033,15 +1051,16 @@ const Transcription = () => {  const { currentUser } = useAuth();
       // Convert line breaks (but not inside code blocks)
       .replace(/(?<!<pre[^>]*>)(?<!<code[^>]*>)\n(?![^<]*<\/pre>)(?![^<]*<\/code>)/g, '<br/>');
   };  
-    return (
+  return (
     <Box sx={{ 
       flexGrow: 1, 
-      height: '100vh', 
+      height: { xs: '100dvh', sm: '100vh' }, // Use dynamic viewport height on mobile
       display: 'flex', 
       flexDirection: 'column',
       background: 'linear-gradient(145deg, #ffffff, #f8fafc)',
       backgroundAttachment: 'fixed',
-      color: '#334155'
+      color: '#334155',
+      overflow: 'hidden' // Prevent scrolling on main container
     }}
     onClick={(e) => {
       // This is the root component, trap any stray clicks
@@ -1050,16 +1069,19 @@ const Transcription = () => {  const { currentUser } = useAuth();
         console.log('[Transcription] Root container click', e.target);
       }
     }}
-    >
-      <StyledAppBar position="static">
-        <Toolbar>
+    >      <StyledAppBar position="static">
+        <Toolbar sx={{ 
+          minHeight: { xs: '56px', sm: '64px' },
+          px: { xs: 1, sm: 2 }
+        }}>
           <IconButton 
             edge="start" 
             sx={{ 
-              mr: 1, 
+              mr: { xs: 0.5, sm: 1 }, 
               color: '#0b4f75',
               borderRadius: '12px',
               transition: 'all 0.2s ease',
+              p: { xs: 1, sm: 1.5 },
               '&:hover': {
                 backgroundColor: 'rgba(11, 79, 117, 0.08)',
                 transform: 'translateY(-1px)'
@@ -1070,9 +1092,9 @@ const Transcription = () => {  const { currentUser } = useAuth();
             }} 
             onClick={() => navigate('/dashboard')}
           >
-            <ArrowBackIcon />
+            <ArrowBackIcon sx={{ fontSize: { xs: '1.2rem', sm: '1.5rem' } }} />
           </IconButton>
-          <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center' }}>
+          <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}>
             {editingTitle ? (
               <TextField
                 value={newTitle}
@@ -1083,11 +1105,12 @@ const Transcription = () => {  const { currentUser } = useAuth();
                 onBlur={handleTitleSave}
                 onKeyPress={(e) => e.key === 'Enter' && handleTitleSave()}
                 sx={{ 
-                  mr: 1, 
+                  mr: { xs: 0.5, sm: 1 }, 
                   flexGrow: 1, 
-                  maxWidth: '50%',
+                  maxWidth: { xs: '60%', sm: '50%' },
                   '& .MuiOutlinedInput-root': {
                     borderRadius: '8px',
+                    fontSize: { xs: '0.9rem', sm: '1rem' },
                     '& fieldset': {
                       borderColor: '#e4e4e7',
                     },
@@ -1102,7 +1125,15 @@ const Transcription = () => {  const { currentUser } = useAuth();
                 InputProps={{
                   endAdornment: (
                     <InputAdornment position="end">
-                      <IconButton edge="end" onClick={handleTitleSave} size="small" sx={{ color: '#0b4f75' }}>
+                      <IconButton 
+                        edge="end" 
+                        onClick={handleTitleSave} 
+                        size="small" 
+                        sx={{ 
+                          color: '#0b4f75',
+                          p: { xs: 0.5, sm: 1 }
+                        }}
+                      >
                         <CheckCircleIcon fontSize="small" />
                       </IconButton>
                     </InputAdornment>
@@ -1112,16 +1143,26 @@ const Transcription = () => {  const { currentUser } = useAuth();
             ) : (              <EditableTitle 
                 variant="h6" 
                 component="div" 
-                noWrap 
-                onClick={isExistingMeeting ? null : handleTitleClick} 
                 sx={{ 
                   flexGrow: 1, 
                   cursor: isExistingMeeting ? 'default' : 'pointer',
+                  fontSize: { xs: '1rem', sm: '1.25rem' },
+                  fontWeight: { xs: 500, sm: 600 },
+                  // Enable text wrapping and ellipsis for long titles
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: { xs: 'nowrap', sm: 'nowrap' },
+                  // Allow wrapping on very small screens
+                  [theme.breakpoints.down('xs')]: {
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                  },
                   '&:hover': {
                     backgroundColor: isExistingMeeting ? 'transparent' : 'rgba(11, 79, 117, 0.08)',
                     transform: isExistingMeeting ? 'none' : 'translateY(-1px)',
                   }
                 }}
+                onClick={isExistingMeeting ? null : handleTitleClick} 
               >
                 {meetingTitle}
                 {isExistingMeeting && (
@@ -1129,12 +1170,12 @@ const Transcription = () => {  const { currentUser } = useAuth();
                     variant="caption" 
                     component="span" 
                     sx={{ 
-                      ml: 1, 
+                      ml: { xs: 0.5, sm: 1 }, 
                       color: '#64748b', 
                       backgroundColor: 'rgba(11, 79, 117, 0.08)',
-                      padding: '2px 8px',
+                      padding: { xs: '1px 4px', sm: '2px 8px' },
                       borderRadius: '12px',
-                      fontSize: '0.7rem'
+                      fontSize: { xs: '0.6rem', sm: '0.7rem' }
                     }}
                   >
                     Saved Meeting
@@ -1143,9 +1184,17 @@ const Transcription = () => {  const { currentUser } = useAuth();
               </EditableTitle>
             )}
             {isRecordingLocal && (
-              <Box sx={{ display: 'flex', alignItems: 'center', ml: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', ml: { xs: 1, sm: 2 } }}>
                 <RecordingDot isRecording={isRecordingLocal} />
-                <Typography variant="caption" sx={{ mr: 1, color: '#ff7300', fontWeight: 500 }}>
+                <Typography 
+                  variant="caption" 
+                  sx={{ 
+                    mr: 1, 
+                    color: '#ff7300', 
+                    fontWeight: 500,
+                    fontSize: { xs: '0.75rem', sm: '0.8rem' }
+                  }}
+                >
                   Rec: {formatTime(recordingTimeLocal)}
                 </Typography>
               </Box>
@@ -1166,11 +1215,11 @@ const Transcription = () => {  const { currentUser } = useAuth();
           sx={{
             '& .MuiTab-root': {
               color: '#64748b',
-              minHeight: '48px',
-              padding: '12px 16px',
+              minHeight: { xs: '44px', sm: '48px' },
+              padding: { xs: '8px 12px', sm: '12px 16px' },
               opacity: 0.7,
               textTransform: 'none',
-              fontSize: '0.9rem',
+              fontSize: { xs: '0.8rem', sm: '0.9rem' },
               fontWeight: 500,
               letterSpacing: '0.01em',
               transition: 'all 0.3s ease',
@@ -1183,6 +1232,13 @@ const Transcription = () => {  const { currentUser } = useAuth();
                 color: '#0b4f75',
                 fontWeight: 600,
                 opacity: 1
+              },
+              // Mobile specific adjustments
+              [theme.breakpoints.down('sm')]: {
+                '& .MuiSvgIcon-root': {
+                  fontSize: '1rem',
+                  marginRight: '4px'
+                }
               }
             },
             '& .MuiTabs-indicator': {
@@ -1191,7 +1247,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
               borderRadius: '2px',
               transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
             }
-          }}        >          <Tab 
+          }}>          <Tab 
             icon={<ArticleIcon fontSize="small" />} 
             iconPosition="start" 
             label={isExistingMeeting ? "View Transcript" : "Transcript"} 
@@ -1224,30 +1280,34 @@ const Transcription = () => {  const { currentUser } = useAuth();
         {/* Always show MeetingRecorder for new meetings (not isExistingMeeting) */}
         {!isExistingMeeting && (
           <MeetingRecorder onTranscriptionUpdate={handleMeetingRecorderUpdate} />
-        )}
-        <Box sx={{ mt: 2 }}>
+        )}        <Box sx={{ mt: { xs: 1, sm: 2 } }}>
           {(rawTranscript || animatedDisplayedTranscript || isRecordingLocal) ? ( // Show controls if there's any activity
-            <>              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+            <>
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
                 {!isExistingMeeting && (
                   <IconButton 
                     color="primary" 
                     onClick={saveTranscription} 
                     disabled={isProcessing || !rawTranscript} 
                     title="Save Meeting"
+                    sx={{ 
+                      p: { xs: 1, sm: 1.5 }
+                    }}
                   >
                     <SaveIcon fontSize="small" />
                   </IconButton>
                 )}
-              </Box><Paper 
+              </Box>
+              <Paper 
                 variant="outlined" 
                 sx={{ 
-                  p: 3, 
+                  p: { xs: 2, sm: 3 }, 
                   minHeight: isExistingMeeting ? 'calc(100vh - 220px)' : '200px', 
-                  maxHeight: isExistingMeeting ? 'calc(100vh - 220px)' : 'calc(100vh - 400px)', 
+                  maxHeight: isExistingMeeting ? 'calc(100vh - 220px)' : { xs: 'calc(100vh - 320px)', sm: 'calc(100vh - 400px)' },
                   height: isExistingMeeting ? 'calc(100vh - 220px)' : 'auto',
                   overflowY: 'auto', 
                   backgroundColor: '#f8fafc',
-                  borderRadius: '16px',
+                  borderRadius: { xs: '12px', sm: '16px' },
                   boxShadow: '0 4px 16px rgba(11, 79, 117, 0.08)',
                   border: '1px solid rgba(226, 232, 240, 0.8)',
                   transition: 'all 0.3s ease'
@@ -1257,21 +1317,33 @@ const Transcription = () => {  const { currentUser } = useAuth();
                   variant="body1" 
                   sx={{ 
                     whiteSpace: 'pre-wrap', 
-                    lineHeight: 1.7,
-                    color: '#334155' 
+                    lineHeight: { xs: 1.5, sm: 1.7 },
+                    color: '#334155',
+                    fontSize: { xs: '0.9rem', sm: '1rem' }
                   }}
                 >
-                  {animatedDisplayedTranscript || ( (isRecordingLocal || (typeof MeetingRecorder !== 'undefined' && MeetingRecorder.isRecording)) && !rawTranscript ? "Listening..." : "Start recording to see transcript...")}                </Typography>
+                  {animatedDisplayedTranscript || ( (isRecordingLocal || (typeof MeetingRecorder !== 'undefined' && MeetingRecorder.isRecording)) && !rawTranscript ? "Listening..." : "Start recording to see transcript...")}
+                </Typography>
               </Paper>
               {!isExistingMeeting && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-                  <ActionButton variant="contained" color="primary" startIcon={<SummarizeIcon />} onClick={generateSummary} disabled={isProcessing || !rawTranscript}>
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: { xs: 1.5, sm: 2 } }}>
+                  <ActionButton 
+                    variant="contained" 
+                    color="primary" 
+                    startIcon={<SummarizeIcon />} 
+                    onClick={generateSummary} 
+                    disabled={isProcessing || !rawTranscript}
+                    sx={{
+                      fontSize: { xs: '0.85rem', sm: '0.9rem' },
+                      padding: { xs: '8px 16px', sm: '10px 20px' }
+                    }}
+                  >
                     Generate Summary
                   </ActionButton>
                 </Box>
               )}
             </>
-          ) : ( 
+          ) : (
             <Box 
               sx={{ 
                 display: 'flex', 
@@ -1365,7 +1437,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
           onTouchStart={(e) => e.stopPropagation()}
           onTouchEnd={(e) => e.stopPropagation()}
           onScroll={(e) => e.stopPropagation()}
-         ><Card 
+         >            <Card 
               onClick={(e) => {
                 console.log("[Transcription] Card onClick prevented");
                 e.stopPropagation();
@@ -1375,9 +1447,9 @@ const Transcription = () => {  const { currentUser } = useAuth();
               onMouseUp={(e) => e.stopPropagation()} 
               onScroll={(e) => e.stopPropagation()}
               sx={{ 
-                mb: 3, 
+                mb: { xs: 2, sm: 3 }, 
                 boxShadow: '0 4px 20px rgba(11, 79, 117, 0.1)',
-                borderRadius: '16px',
+                borderRadius: { xs: '12px', sm: '16px' },
                 overflow: 'hidden',
                 transition: 'all 0.3s ease',
                 border: '1px solid rgba(226, 232, 240, 0.8)',
@@ -1385,7 +1457,9 @@ const Transcription = () => {  const { currentUser } = useAuth();
                   boxShadow: '0 6px 24px rgba(11, 79, 117, 0.15)',
                   transform: 'translateY(-2px)'
                 }
-            }}><CardContent sx={{ p: 3 }} onClick={(e) => e.stopPropagation()}>                    <Typography 
+            }}>
+            <CardContent sx={{ p: { xs: 2, sm: 3 } }} onClick={(e) => e.stopPropagation()}>
+                    <Typography 
                       variant="h5" 
                       gutterBottom 
                       component="div" 
@@ -1393,38 +1467,52 @@ const Transcription = () => {  const { currentUser } = useAuth();
                       sx={{
                         color: '#0b4f75', 
                         fontWeight: 600,
-                        fontSize: '1.5rem',
-                        letterSpacing: '-0.01em'
+                        fontSize: { xs: '1.25rem', sm: '1.5rem' },
+                        letterSpacing: '-0.01em',
+                        lineHeight: { xs: 1.3, sm: 1.4 },
+                        // Enable text wrapping for mobile
+                        wordWrap: 'break-word',
+                        overflowWrap: 'break-word',
+                        hyphens: 'auto'
                       }}
                     >
                       {summary.title || "Meeting Summary"}
-                    </Typography>                    <Divider sx={{ my: 2, borderColor: 'rgba(226, 232, 240, 0.8)' }} onClick={(e) => e.stopPropagation()} />                    {summary.overall && (
-                      <Box mb={2} onClick={(e) => e.stopPropagation()}>
+                    </Typography>
+                    <Divider sx={{ my: { xs: 1.5, sm: 2 }, borderColor: 'rgba(226, 232, 240, 0.8)' }} onClick={(e) => e.stopPropagation()} />
+                    {summary.overall && (
+                      <Box mb={{ xs: 1.5, sm: 2 }} onClick={(e) => e.stopPropagation()}>
                         <Typography 
                           variant="subtitle1" 
                           onClick={(e) => e.stopPropagation()}
                           sx={{
                             fontWeight: 600,
                             color: '#0b4f75',
-                            fontSize: '1.1rem',
-                            mb: 1
+                            fontSize: { xs: '1rem', sm: '1.1rem' },
+                            mb: { xs: 0.75, sm: 1 },
+                            // Enable text wrapping for mobile
+                            wordWrap: 'break-word',
+                            overflowWrap: 'break-word',
+                            hyphens: 'auto',
+                            lineHeight: { xs: 1.3, sm: 1.4 }
                           }}
                         >
                           Overall Summary
-                        </Typography>                        <Typography 
+                        </Typography>
+                        <Typography 
                           variant="body2" 
                           onClick={(e) => e.stopPropagation()}
                           sx={{
                             whiteSpace: 'pre-wrap', 
                             mt: 0.5,
                             color: '#334155',
-                            lineHeight: 1.6
+                            lineHeight: { xs: 1.5, sm: 1.6 },
+                            fontSize: { xs: '0.875rem', sm: '0.9rem' }
                           }}
                         >
                           {summary.overall}
                         </Typography>
                       </Box>
-                    )}                    {/* Dynamic sections from AI analysis */}
+                    )}{/* Dynamic sections from AI analysis */}
                     {summary.sections && [...summary.sections]
                       // Sort sections to ensure "Action Items" or "Next Steps" comes last
                       .sort((a, b) => {
@@ -1446,20 +1534,27 @@ const Transcription = () => {  const { currentUser } = useAuth();
                         
                         // Rename action section to standardized name if it is an action section
                         const displayHeadline = isActionSection ? "ACTION ITEMS AND NEXT STEPS" : section.headline;
-                          return (
-                          <Box key={`section-${sectionIndex}`} mb={2} onClick={(e) => e.stopPropagation()}>
+                          return (                          <Box key={`section-${sectionIndex}`} mb={{ xs: 1.5, sm: 2 }} onClick={(e) => e.stopPropagation()}>
                             <Typography 
                               variant="subtitle1" 
                               onClick={(e) => e.stopPropagation()}
                               sx={{
                                 fontWeight: 600,
                                 color: '#0b4f75',
-                                fontSize: '1.1rem',
-                                mb: 1
+                                fontSize: { xs: '1rem', sm: '1.1rem' },
+                                mb: { xs: 0.75, sm: 1 },
+                                // Enable proper text wrapping for section headings
+                                wordWrap: 'break-word',
+                                overflowWrap: 'break-word',
+                                hyphens: 'auto',
+                                lineHeight: { xs: 1.3, sm: 1.4 },
+                                // Ensure text doesn't get cut off on mobile
+                                whiteSpace: 'normal'
                               }}
                             >
                               {displayHeadline}
-                            </Typography>                            <List dense sx={{pt:0}} onClick={(e) => e.stopPropagation()}>                          
+                            </Typography>
+                            <List dense sx={{ pt: 0, px: { xs: 0, sm: 1 } }} onClick={(e) => e.stopPropagation()}>
                               {section.bulletPoints.map((point, pointIndex) => (                                <ListItem 
                                   key={`section-${sectionIndex}-point-${pointIndex}`} 
                                   onClick={(e) => {
@@ -1471,17 +1566,20 @@ const Transcription = () => {  const { currentUser } = useAuth();
                                   onMouseUp={(e) => e.stopPropagation()}
                                   sx={{
                                     pl: 0,
-                                    py: 0.8,
+                                    py: { xs: 0.6, sm: 0.8 },
+                                    px: { xs: 0, sm: 0.5 },
                                     transition: 'all 0.2s ease',
                                     '&:hover': {
                                       backgroundColor: 'rgba(11, 79, 117, 0.03)',
                                       borderRadius: '8px'
                                     }
-                                  }}                                ><ListItemIcon sx={{minWidth: 32}} onClick={(e) => e.stopPropagation()}>
+                                  }}
+                                >
+                                <ListItemIcon sx={{ minWidth: { xs: 28, sm: 32 } }} onClick={(e) => e.stopPropagation()}>
                                     <span style={{ 
                                       color: isActionSection ? '#ff7300' : '#0b4f75', 
-                                      fontSize: '1.2em',
-                                      marginLeft: '8px'
+                                      fontSize: { xs: '1.1em', sm: '1.2em' },
+                                      marginLeft: { xs: '4px', sm: '8px' }
                                     }}>•</span>
                                   </ListItemIcon>
                                   <ListItemText 
@@ -1490,8 +1588,12 @@ const Transcription = () => {  const { currentUser } = useAuth();
                                     primaryTypographyProps={{
                                       sx: {
                                         color: '#334155',
-                                        fontSize: '0.95rem',
-                                        lineHeight: 1.5
+                                        fontSize: { xs: '0.875rem', sm: '0.95rem' },
+                                        lineHeight: { xs: 1.4, sm: 1.5 },
+                                        // Enable proper text wrapping
+                                        wordWrap: 'break-word',
+                                        overflowWrap: 'break-word',
+                                        whiteSpace: 'normal'
                                       }
                                     }}
                                   />
@@ -1562,13 +1664,20 @@ const Transcription = () => {  const { currentUser } = useAuth();
                       </>
                     )}
                 </CardContent>
-            </Card>            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }} onClick={(e) => {
+            </Card>            <Box sx={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              mt: { xs: 2, sm: 3 },
+              mb: { xs: 4, sm: 6 },
+              pb: { xs: 2, sm: 3 }
+            }} onClick={(e) => {
               console.log("[Transcription] Export button container onClick prevented");
               e.stopPropagation();
-              e.preventDefault();            }}>
+              e.preventDefault();
+            }}>
                 <Button 
                   variant="contained" 
-                  startIcon={<ShareIcon />}
+                  startIcon={<ShareIcon sx={{ fontSize: { xs: '1rem', sm: '1.2rem' } }} />}
                   onClick={(e) => {
                     console.log("[Transcription] Share summary button clicked");
                     e.preventDefault();
@@ -1578,11 +1687,12 @@ const Transcription = () => {  const { currentUser } = useAuth();
                   }}
                   disabled={isProcessing}
                   sx={{ 
-                    borderRadius: '24px',
+                    borderRadius: { xs: '20px', sm: '24px' },
                     backgroundColor: '#ff7300',
                     color: '#ffffff',
                     fontWeight: 600,
-                    padding: '8px 24px',
+                    padding: { xs: '6px 16px', sm: '8px 24px' },
+                    fontSize: { xs: '0.85rem', sm: '0.9rem' },
                     textTransform: 'none',
                     boxShadow: '0 2px 6px rgba(255, 115, 0, 0.3)',
                     transition: 'all 0.3s ease',
