@@ -542,7 +542,7 @@ router.post('/meetings/ask', authMiddleware, async (req, res) => {
       context += `Transcript: ${data.transcript || '[No transcript]'}\n`;
     });
     // Construct prompt
-    const prompt = `You are an AI assistant helping a user recall information from their past meetings. Based ONLY on the following meeting transcripts (and their titles/summaries if provided) below, please answer the user's question. If the information is not in the provided context, state that clearly.\n\nUser's question: "${question}"\n\nProvided Context from Past Meetings:\n${context}`;
+    const prompt = `You are a helpful AI assistant for the TwinMind application, designed to help users find information and answer questions about their past meetings.\n\nWhen answering, please **primarily use the provided meeting transcripts and summaries** as your source of truth.\n- If the user's question is directly answerable from the provided meeting context, please provide a concise answer based on that context.\n- If the information is not found in the provided meeting context, clearly indicate that you couldn't find specifics about that in the meetings provided, but you can still try to assist if they have other questions or can provide more details.\n- For general conversational inputs from the user (e.g., 'hello', 'thank you'), please respond naturally and politely.\n- Your goal is to be helpful and conversational while being factual about the meeting content.\n\nUser's question: "${question}"\n\nProvided Meeting Context (Transcripts/Summaries):\n${context}`;
     // Call Gemini
     const gemini = initializeGemini();
     if (!gemini || !gemini.geminiChat) {

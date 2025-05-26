@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI } from '../services/api';
 import { useNavigate } from 'react-router-dom';
@@ -262,6 +262,7 @@ const Dashboard = () => {
   const [newMeetingTitle, setNewMeetingTitle] = useState(''); 
   const [searchInput, setSearchInput] = useState('');
   const [conversationHistory, setConversationHistory] = useState([]); // {sender, text}
+  const chatEndRef = useRef(null);
     // Function to toggle sidebar overlay
   const toggleSidebar = () => {
     // Toggle sidebar visibility on all devices
@@ -600,7 +601,7 @@ const Dashboard = () => {
   const handleLogout = async () => {
     try {
       await logOut();
-      // Redirect happens automatically via auth listener
+      window.location.href = '/login'; // Force redirect after logout
     } catch (err) {
       console.error('Logout error:', err);
       setError('Failed to log out');
@@ -637,6 +638,12 @@ const Dashboard = () => {
     setLoading(false);
     setSearchInput('');
   };
+
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [conversationHistory]);
 
   return (
     <Box sx={{ flexGrow: 1, bgcolor: 'background.default', minHeight: '100vh', display: 'flex' }}>      {/* Left Sidebar - ChatGPT Style - Now always overlays content */}
@@ -1063,6 +1070,7 @@ const Dashboard = () => {
                 ))}
                 {loading && <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}><CircularProgress size={24} /></Box>}
                 {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+                <div ref={chatEndRef} />
               </Paper>
             )}
 
