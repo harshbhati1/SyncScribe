@@ -515,4 +515,48 @@ router.post('/process', authMiddleware, upload.single('audio_data'), async (req,
   }
 });
 
+// Q&A: Ask about meetings (AI-powered)
+router.post('/meetings/ask', authMiddleware, async (req, res) => {
+  try {
+    const { question } = req.body;
+    if (!question || typeof question !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid question.' });
+    }
+    if (!req.user || !req.user.uid) {
+      return res.status(401).json({ error: 'Unauthorized: No user ID.' });
+    }
+    const userId = req.user.uid;
+    // Fetch last 5 meetings (or last 7 days)
+    const meetingsRef = db.collection('users').doc(userId).collection('meetings')
+      .orderBy('createdAt', 'desc').limit(5);
+    const snapshot = await meetingsRef.get();
+    if (snapshot.empty) {
+      return res.json({ answer: "No meeting transcripts found for your account." });
+    }
+    // Build context
+    let context = '';
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      context += `---\nMeeting Title: ${data.title || 'Untitled'}\n`;
+      if (data.summary) context += `Summary: ${data.summary}\n`;
+      context += `Transcript: ${data.transcript || '[No transcript]'}\n`;
+    });
+    // Construct prompt
+    const prompt = `You are an AI assistant helping a user recall information from their past meetings. Based ONLY on the following meeting transcripts (and their titles/summaries if provided) below, please answer the user's question. If the information is not in the provided context, state that clearly.\n\nUser's question: "${question}"\n\nProvided Context from Past Meetings:\n${context}`;
+    // Call Gemini
+    const gemini = initializeGemini();
+    if (!gemini || !gemini.geminiChat) {
+      return res.status(500).json({ error: 'Gemini AI is not available.' });
+    }
+    const result = await gemini.geminiChat.generateContent(prompt);
+    const answer = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text ||
+                   result?.candidates?.[0]?.content?.parts?.[0]?.text ||
+                   "Sorry, I couldn't find an answer.";
+    return res.json({ answer });
+  } catch (err) {
+    console.error('[POST /meetings/ask] Error:', err);
+    return res.status(500).json({ error: 'Failed to process your question. Please try again later.' });
+  }
+});
+
 module.exports = router;

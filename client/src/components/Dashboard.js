@@ -33,7 +33,8 @@ import {
   ListItemText,
   List,
   ListItem,
-  CircularProgress
+  CircularProgress,
+  Stack
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -46,6 +47,9 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import MessageBubble from './MessageBubble';
+import { askMeetingsQuestion } from '../services/api';
+import { marked } from 'marked';
 
 // Custom styled components to match the ChatGPT-style design
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
@@ -256,6 +260,8 @@ const Dashboard = () => {
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [newMeetingTitle, setNewMeetingTitle] = useState(''); 
+  const [searchInput, setSearchInput] = useState('');
+  const [conversationHistory, setConversationHistory] = useState([]); // {sender, text}
     // Function to toggle sidebar overlay
   const toggleSidebar = () => {
     // Toggle sidebar visibility on all devices
@@ -613,6 +619,24 @@ const Dashboard = () => {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
+
+  // Handler for Q&A search bar submit
+  const handleQASubmit = async (e) => {
+    e.preventDefault();
+    if (!searchInput.trim()) return;
+    setConversationHistory((prev) => [...prev, { sender: 'user', text: searchInput }]);
+    setLoading(true);
+    setError('');
+    try {
+      const aiAnswer = await askMeetingsQuestion(searchInput);
+      setConversationHistory((prev) => [...prev, { sender: 'ai', text: aiAnswer }]);
+    } catch (err) {
+      setConversationHistory((prev) => [...prev, { sender: 'ai', text: 'Sorry, something went wrong.', isError: true }]);
+      setError('Failed to get answer.');
+    }
+    setLoading(false);
+    setSearchInput('');
+  };
 
   return (
     <Box sx={{ flexGrow: 1, bgcolor: 'background.default', minHeight: '100vh', display: 'flex' }}>      {/* Left Sidebar - ChatGPT Style - Now always overlays content */}
@@ -976,22 +1000,28 @@ const Dashboard = () => {
             <Tab label="Calendar" />
           </Tabs>
         </StyledAppBar>        {/* Tab Content Panels */}        <TabPanel hidden={tabValue !== 0} value={tabValue} index={0}>
-          <Box sx={{ px: 2, py: 1 }}>
-                      {/* Meeting Cards */}              <Box sx={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                mt: 4,
-                mb: 6,
-                height: '40vh',
-                width: '100%',
-                px: 2
-              }}>                <Typography 
+          {/* Q&A area with heading centered and input row at the bottom */}
+          <Box sx={{
+            width: '100%',
+            maxWidth: 600,
+            mx: 'auto',
+            mt: 4,
+            mb: 2,
+            minHeight: '70vh',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            bgcolor: 'transparent',
+            position: 'relative',
+          }}>
+            {/* If no chat, center the heading */}
+            {conversationHistory.length === 0 ? (
+              <Box sx={{ flex: 1, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Typography 
                   variant="h4" 
                   align="center" 
                   sx={{ 
-                    mb: 3,
                     fontWeight: 700,
                     fontSize: '1.8rem',
                     background: 'linear-gradient(45deg, #0b4f75 30%, #ff7300 90%)',
@@ -1007,13 +1037,43 @@ const Dashboard = () => {
                 >
                   Ask questions about your past meetings and conversations!
                 </Typography>
-              </Box>            <Box sx={{ 
-              display: 'flex', 
-              flexDirection: { xs: 'column', sm: 'row' },
-              alignItems: 'center',
-              justifyContent: 'center', 
-              mt: { xs: 8, sm: 3 },
-              gap: { xs: 2, sm: 1 }
+              </Box>
+            ) : (
+              // If chat exists, show chat canvas above input row
+              <Paper elevation={2} sx={{
+                width: '100%',
+                bgcolor: '#f8fafc',
+                borderRadius: 3,
+                flex: '1 1 auto',
+                minHeight: 200,
+                maxHeight: 'calc(70vh - 80px)',
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                mb: 2,
+                p: { xs: 1, sm: 2 },
+              }}>
+                {conversationHistory.map((msg, idx) => (
+                  <MessageBubble
+                    key={idx}
+                    message={msg}
+                    cleanMarkdownFormatting={msg.sender === 'ai' ? marked : x => x}
+                  />
+                ))}
+                {loading && <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}><CircularProgress size={24} /></Box>}
+                {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+              </Paper>
+            )}
+
+            {/* Input row always at the bottom */}
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{
+              width: '100%',
+              maxWidth: 600,
+              flexShrink: 0,
+              pb: { xs: 2, sm: 3 },
+              pt: 1,
+              bgcolor: 'transparent',
             }}>
               <Paper
                 component="form"
@@ -1022,8 +1082,7 @@ const Dashboard = () => {
                   alignItems: 'center', 
                   px: 2,
                   py: 0.5,
-                  width: '100%',
-                  maxWidth: '400px',
+                  flex: 1,
                   borderRadius: '20px',
                   border: '1px solid #e4e4e7',
                   backgroundColor: '#fafafa',
@@ -1032,30 +1091,25 @@ const Dashboard = () => {
                     boxShadow: '0 1px 5px rgba(0,0,0,0.05)'
                   }
                 }}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  // Handle search submission here
-                }}
+                onSubmit={handleQASubmit}
               >
                 <InputBase
-                  sx={{ ml: 1, flex: 1, fontSize: '0.85rem' }}
+                  value={searchInput}
+                  onChange={e => setSearchInput(e.target.value)}
                   placeholder="Ask a question about your meetings..."
                   inputProps={{ 'aria-label': 'search meetings' }}
+                  sx={{ ml: 1, flex: 1, fontSize: '0.85rem' }}
+                  disabled={loading}
                 />
-                <IconButton type="submit" sx={{ p: '5px', color: '#0b4f75' }} aria-label="search">
+                <IconButton type="submit" sx={{ p: '5px', color: '#1976d2' }} aria-label="search" disabled={loading || !searchInput.trim()}>
                   <SearchIcon fontSize="small" />
                 </IconButton>
               </Paper>
-                <CaptureButton
+              <CaptureButton
                 variant="contained"
                 color="primary"
                 startIcon={<MicIcon fontSize="small" />}
-                sx={{ 
-                  fontSize: '0.8rem', 
-                  py: 1,
-                  width: { xs: '100%', sm: 'auto' },
-                  maxWidth: { xs: '400px', sm: 'none' }
-                }}
+                sx={{ fontSize: '0.8rem', py: 1, minWidth: 120 }}
                 onClick={() => {
                   // For a new meeting, set default title and clear previous ID
                   localStorage.setItem('currentMeetingTitle', 'New Meeting');
@@ -1065,7 +1119,7 @@ const Dashboard = () => {
               >
                 Capture
               </CaptureButton>
-            </Box>
+            </Stack>
           </Box>
         </TabPanel>
           <TabPanel hidden={tabValue !== 1} value={tabValue} index={1}>

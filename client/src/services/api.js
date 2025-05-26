@@ -579,5 +579,17 @@ export const transcriptionAPI = {
   }),
 };
 
+// Q&A for meetings (Dashboard search bar)
+export const askMeetingsQuestion = async (question) => {
+  const { data, status } = await apiRequest('/transcription/meetings/ask', {
+    method: 'POST',
+    body: JSON.stringify({ question }),
+  });
+  if (status !== 200 || !data || !data.answer) {
+    throw new Error(data?.error || 'Failed to get answer');
+  }
+  return data.answer;
+};
+
 // Export for general use
 export default apiRequest;
