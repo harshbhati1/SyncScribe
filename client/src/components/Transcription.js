@@ -750,195 +750,49 @@ const Transcription = () => {  const { currentUser } = useAuth();
   const handleChatSubmit = async (e) => {
     e?.preventDefault();
     if (!chatQuery.trim() || isAiResponding) return;
-
     const currentTextQuery = chatQuery.trim();
-    // Create a sanitized history to send to backend
-    const historyToSend = chatMessages.map(msg => ({
-      sender: msg.sender,
-      text: msg.text
-    }));
-
-    console.log(`[Transcription] Current chat history before adding new message: ${chatMessages.length} messages`);
-
-    // Add user message to chat history
-    const userMessage = {
-      id: `user-${Date.now()}`,
-      text: currentTextQuery,
-      sender: 'user',
-      timestamp: new Date().toISOString()
-    };
-
-    // Update UI immediately
-    setChatMessages(prevMessages => [...prevMessages, userMessage]);
-    setChatQuery(''); // Clear input field
+    const historyToSend = chatMessages.map(msg => ({ sender: msg.sender, text: msg.text }));
+    setChatMessages(prevMessages => [...prevMessages, { id: `user-${Date.now()}`, text: currentTextQuery, sender: 'user', timestamp: new Date().toISOString() }]);
+    setChatQuery('');
     setIsAiResponding(true);
-
-    // Save chat messages silently after adding user message
-    if (!isActiveRecordingSession && isExistingMeeting) {
-      const id = meetingId || localStorage.getItem('currentMeetingId');
-      console.log('[Chat] Appending chat message to Firestore (reopened meeting):', id, userMessage);
-      appendChatMessage(userMessage);
-    } else {
-      setTimeout(() => {
-        appendChatMessage(userMessage);
-      }, 500);
-    }
-
-    // Generate ID for AI response
+    // Save user message
+    const userMessage = { id: `user-${Date.now()}`, text: currentTextQuery, sender: 'user', timestamp: new Date().toISOString() };
+    appendChatMessage(userMessage);
     const generatedAiId = `ai-${Date.now()}`;
     currentAiMessageIdRef.current = generatedAiId;
-    console.log('[AI Stream Start] Placeholder ID:', generatedAiId, 'Ref set to:', currentAiMessageIdRef.current);
-
-    // Add placeholder for AI response
-    setChatMessages(prevMessages => [
-      ...prevMessages,
-      {
-        id: generatedAiId,
-        text: "",
-        sender: 'ai',
-        isStreaming: true
-      }
-    ]);
-
-    // Switch to chat tab if not already there
-    if (tabValue !== 1) {
-      setTabValue(1);
-    }
-
+    setChatMessages(prevMessages => [...prevMessages, { id: generatedAiId, text: "", sender: 'ai', isStreaming: true }]);
+    if (tabValue !== 1) setTabValue(1);
     try {
-      console.log("Sending chat request with transcript length:", rawTranscript?.length || 0);
-
       let aiResponseText = "";
       await transcriptionAPI.chatWithTranscript(
-        rawTranscript,
+        rawTranscriptRef.current,
         historyToSend,
         currentTextQuery,
         {
           onChunk: (textChunk) => {
-            console.log('[AI onChunk] currentAiMessageIdRef:', currentAiMessageIdRef.current, 'Chunk:', textChunk);
             aiResponseText += textChunk;
-            setChatMessages(prevMessages =>
-              prevMessages.map(msg => {
-                if (msg.id === currentAiMessageIdRef.current) {
-                  console.log('[AI onChunk] Before update:', msg);
-                  const updatedMsg = { ...msg, text: (msg.text || "") + textChunk };
-                  console.log('[AI onChunk] After update:', updatedMsg);
-                  return updatedMsg;
-                }
-                return msg;
-              })
-            );
+            setChatMessages(prevMessages => prevMessages.map(msg => msg.id === currentAiMessageIdRef.current ? { ...msg, text: (msg.text || "") + textChunk } : msg));
           },
           onEnd: () => {
-            const finalAccumulatedText = aiResponseText; // Capture the full text at the start
-            const messageIdToFinalize = currentAiMessageIdRef.current;
-
             setIsAiResponding(false);
-
-            if (messageIdToFinalize) {
-              // 1. Finalize the message in the UI state
-              console.log(`[AI onEnd UI Update] Finalizing UI for msg ID: ${messageIdToFinalize} with text: "${finalAccumulatedText}"`);
-              setChatMessages(prevMessages =>
-                prevMessages.map(msg =>
-                  msg.id === messageIdToFinalize
-                    ? { ...msg, isStreaming: false, text: finalAccumulatedText }
-                    : msg
-                )
-              );
-
-              // 2. Prepare and save the message (already working)
-              const aiMessageToSave = {
-                id: messageIdToFinalize,
-                text: finalAccumulatedText,
-                sender: 'ai',
-                timestamp: new Date().toISOString()
-              };
-              const currentMeetingId = meetingId || localStorage.getItem('currentMeetingId');
-              console.log('[AI Chat Save] Attempting to append AI message ONCE. ID:', currentMeetingId, 'Message:', aiMessageToSave);
-              if ((!isActiveRecordingSession && isExistingMeeting) || isActiveRecordingSession) {
-                appendChatMessage(aiMessageToSave);
-              }
-
-              currentAiMessageIdRef.current = null; // Nullify ref AFTER all operations for this ID
-            } else {
-              console.warn('[AI onEnd] No currentAiMessageIdRef to process.');
+            if (currentAiMessageIdRef.current) {
+              setChatMessages(prevMessages => prevMessages.map(msg => msg.id === currentAiMessageIdRef.current ? { ...msg, isStreaming: false, text: aiResponseText } : msg));
+              // Save AI message after stream ends
+              const aiMessageToSave = { id: currentAiMessageIdRef.current, text: aiResponseText, sender: 'ai', timestamp: new Date().toISOString() };
+              appendChatMessage(aiMessageToSave);
+              currentAiMessageIdRef.current = null;
             }
-            aiResponseText = ""; // Reset accumulator for the next AI response
+            aiResponseText = "";
           },
           onError: (error) => {
-            console.error("Chat stream error:", error);
-            // Format error message based on type
-            let formattedErrorMsg = error.friendlyMessage || error.message || 'Unknown error';
-
-            if (error.code === 'RATE_LIMITED' || formattedErrorMsg.includes('rate limit') || formattedErrorMsg.includes('429')) {
-              formattedErrorMsg = "😓 Rate limit reached. I need to take a short break. Please try again in 30-60 seconds.";
-            } else if (error.code === 'SERVER_ERROR' || formattedErrorMsg.includes('Server error') || formattedErrorMsg.includes('500')) {
-              formattedErrorMsg = "😓 Sorry, I'm having trouble connecting to the server. This might be due to a temporary issue. Please try again in a moment.";
-            }
-
-            // Update the message with error information
-            setChatMessages(prevMessages => {
-              // Find the specific message that needs updating
-              const messageToUpdate = prevMessages.find(msg => msg.id === currentAiMessageIdRef.current);
-
-              // If the message exists and already has substantial content
-              if (messageToUpdate && messageToUpdate.text && messageToUpdate.text.length > 20) {
-                // Keep existing content but add error notice
-                return prevMessages.map(msg =>
-                  msg.id === currentAiMessageIdRef.current
-                    ? {
-                        ...msg,
-                        text: `${msg.text}\n\n[Error: Communication was interrupted. ${formattedErrorMsg}]`,
-                        isStreaming: false,
-                        isError: true
-                      }
-                    : msg
-                );
-              } else {
-                // Replace with just the error message if there's no substantial content
-                return prevMessages.map(msg =>
-                  msg.id === currentAiMessageIdRef.current
-                    ? {
-                        ...msg,
-                        text: cleanMarkdownFormatting(formattedErrorMsg),
-                        isStreaming: false,
-                        isError: true
-                      }
-                    : msg
-                );
-              }
-            });
             setIsAiResponding(false);
             currentAiMessageIdRef.current = null;
-            // Only set the global error for major failures, not just stream interruptions
-            setChatMessages(prevMsgs => {
-              const currentMessage = prevMsgs.find(msg => msg.id === currentAiMessageIdRef.current);
-              if (!currentMessage?.text || currentMessage.text.length < 5) {
-                setError(`Chat error: ${error.message || 'Failed to get response'}`);
-              }
-              return prevMsgs;
-            });
           }
         }
       );
     } catch (apiSetupError) {
-      console.error("Error setting up chat stream:", apiSetupError);
-      // Handle error in API setup
-      setChatMessages(prevMsgs =>
-        prevMsgs.map(msg =>
-          msg.id === currentAiMessageIdRef.current
-            ? {
-                ...msg,
-                text: `I'm sorry, I couldn't process your request: ${apiSetupError.message || 'Failed to connect to chat service'}. Please try again in a moment.`,
-                isStreaming: false,
-                isError: true
-              }
-            : msg
-        )
-      );
       setIsAiResponding(false);
       currentAiMessageIdRef.current = null;
-      setError(`Chat error: ${apiSetupError.message || 'Failed to initiate chat'}`);
     }
   };
 
@@ -964,70 +818,47 @@ const Transcription = () => {  const { currentUser } = useAuth();
       if (meetingId) {
         console.log(`[Transcription] Loading data for meeting: ${meetingId}`);
         setIsProcessing(true);
-        setError(''); // Clear previous errors
-        setHasAutoSwitchedToChat(false); // Reset flag when loading a new meeting
+        setError('');
+        setHasAutoSwitchedToChat(false);
         try {
           const response = await transcriptionAPI.getMeeting(meetingId);
           console.log('[Transcription] API Response:', response);
-          
           if (response && response.data && response.data.success) {
             const meetingData = response.data.data;
-            console.log('[Transcription] Meeting data:', meetingData);
-            
-            // Set title and mark if it's not a default title
-            const title = meetingData.title || `Meeting ${meetingId}`;
+            // 2. Fix meeting title logic
+            const title = meetingData.title || 'New Meeting';
             setMeetingTitle(title);
             localStorage.setItem('currentMeetingTitle', title);
-            console.log('[Transcription] Set meeting title:', title);
-            
-            // If title is not a default format, mark it as manually set
             if (title !== 'New Meeting' && !title.startsWith('Meeting ')) {
               localStorage.setItem('titleManuallySet', 'true');
             } else {
               localStorage.removeItem('titleManuallySet');
             }
-            
-            // Set meeting data
             setRawTranscript(meetingData.transcript || "");
+            rawTranscriptRef.current = meetingData.transcript || "";
             setAnimatedDisplayedTranscript(meetingData.transcript || "");
             setTranscriptionSegments(meetingData.segments || []);
             setChatMessages(meetingData.chatHistory || []); 
             setSummary(meetingData.summary || null);
-            console.log('[Transcription] Set meeting data:', {
-              transcript: meetingData.transcript ? 'present' : 'missing',
-              segments: meetingData.segments?.length || 0,
-              chatHistory: meetingData.chatHistory?.length || 0,
-              summary: meetingData.summary ? 'present' : 'missing'
-            });
-            
-            // Store current meeting ID
             localStorage.setItem('currentMeetingId', meetingId);
-            console.log('[Transcription] Stored meeting ID in localStorage:', meetingId);
           } else {
-            console.log('[Transcription] No meeting data found or API error:', response);
-            // Fallback for demo or if meeting not found by API
-            let loadedRawTranscript = 'No transcript available for this meeting ID.';
-            let loadedTitle = `Meeting ${meetingId}`;
-            
-            setMeetingTitle(loadedTitle);
-            setRawTranscript(loadedRawTranscript);
-            setAnimatedDisplayedTranscript(loadedRawTranscript);
-            setChatMessages([]); // Reset chat for unknown/new meetingId via URL
-            
-            // Set error message
-            if (response && response.data && response.data.error) {
-              setError(response.data.error);
-            } else if (response && response.status !== 200) {
-              setError(`Failed to load meeting (Status: ${response.status})`);
+            // Only show error if this is not a new meeting (i.e., if user navigated to a non-existent meeting)
+            if (response && response.status !== 404) {
+              setError(response?.data?.error || `Failed to load meeting (Status: ${response.status})`);
             }
+            setMeetingTitle('New Meeting');
+            setRawTranscript('');
+            rawTranscriptRef.current = '';
+            setAnimatedDisplayedTranscript('');
+            setChatMessages([]);
+            setSummary(null);
           }
         } catch (err) {
           console.error('[Transcription] Error loading meeting data:', err);
           setError('Failed to load meeting data. Please try again.');
-          
-          // Clear states and set to default
-          setMeetingTitle(`Meeting ${meetingId}`);
+          setMeetingTitle('New Meeting');
           setRawTranscript('');
+          rawTranscriptRef.current = '';
           setAnimatedDisplayedTranscript('');
           setChatMessages([]);
           setSummary(null);
@@ -1036,17 +867,13 @@ const Transcription = () => {  const { currentUser } = useAuth();
         }
       } else {
         console.log('[Transcription] No meetingId, initializing new meeting');
-        // No meetingId, treat as a new meeting - initialize with empty state but don't reset
         setRawTranscript('');
+        rawTranscriptRef.current = '';
         setAnimatedDisplayedTranscript('');
         setTranscriptionSegments([]);
         setChatMessages([]);
         setSummary(null);
-        
-        const storedTitle = localStorage.getItem('currentMeetingTitle');
-        setMeetingTitle(storedTitle || 'New Meeting');
-        
-        // Clear stored meeting ID since this is a new meeting
+        setMeetingTitle('New Meeting');
         localStorage.removeItem('currentMeetingId');
         localStorage.removeItem('titleManuallySet');
       }
