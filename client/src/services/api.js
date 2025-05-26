@@ -4,7 +4,7 @@
  */
 
 // Connect to server port 3000 as specified in server's .env file
-const API_BASE_URL = 'http://localhost:3000/api';
+const API_BASE_URL = 'https://twinmind-14ro.onrender.com/api';
 
 // Get stored auth token
 const getAuthToken = () => {

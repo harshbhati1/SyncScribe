@@ -320,7 +320,7 @@ const MeetingRecorder = ({ onTranscriptionUpdate }) => {
       }
       
       console.log(`[Recorder] Sending ${audioBlob.type} audio (is_final: ${isFinalSessionChunk}) to backend.`);
-      const response = await fetch('http://localhost:3000/api/transcription/process', {
+      const response = await fetch('https://twinmind-14ro.onrender.com/api/transcription/process', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
