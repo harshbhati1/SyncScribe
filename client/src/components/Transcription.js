@@ -638,7 +638,30 @@ const Transcription = () => {  const { currentUser } = useAuth();
 
     if (metadata && metadata.type === 'recording_stopped' && metadata.shouldSave) {
       console.log('[Transcription] Recording stopped, preparing to save...');
-      handleRecordingStop();
+      if (chunkToProcess) {
+        setRawTranscript(prevRaw => {
+          let newRaw = prevRaw;
+          // Smart spacing for raw transcript
+          if (prevRaw && !prevRaw.endsWith(' ') && chunkToProcess && !chunkToProcess.startsWith(' ')) {
+            newRaw += " " + chunkToProcess;
+          } else if (prevRaw && prevRaw.endsWith(' ') && chunkToProcess && chunkToProcess.startsWith(' ')) {
+            newRaw += chunkToProcess.substring(1);
+          } else if (!prevRaw && chunkToProcess && chunkToProcess.startsWith(' ')) {
+            newRaw += chunkToProcess.substring(1);
+          } else {
+            newRaw += chunkToProcess;
+          }
+          rawTranscriptRef.current = newRaw;
+          setAnimatedDisplayedTranscript(newRaw);
+          // Call handleRecordingStop after transcript is updated
+          setTimeout(() => {
+            handleRecordingStop();
+          }, 0);
+          return newRaw;
+        });
+      } else {
+        handleRecordingStop();
+      }
       return;
     }
 
