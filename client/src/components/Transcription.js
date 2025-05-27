@@ -888,15 +888,13 @@ const Transcription = () => {  const { currentUser } = useAuth();
         setTranscriptionSegments([]);
         setChatMessages([]);
         setSummary(null);
-        // Only reset title if not manually set or user has not set a new title
+        // Only set to 'New Meeting' if no manually set title; never clear manual title here
         const storedTitle = localStorage.getItem('currentMeetingTitle');
         const titleManuallySet = localStorage.getItem('titleManuallySet');
-        if ((titleManuallySet && storedTitle) || (newTitle && newTitle.trim())) {
-          setMeetingTitle(storedTitle || newTitle);
+        if (titleManuallySet && storedTitle) {
+          setMeetingTitle(storedTitle);
         } else {
           setMeetingTitle('New Meeting');
-          localStorage.removeItem('currentMeetingId');
-          localStorage.removeItem('titleManuallySet');
         }
       }
     };
