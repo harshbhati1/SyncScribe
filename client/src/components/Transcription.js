@@ -854,7 +854,14 @@ const Transcription = () => {  const { currentUser } = useAuth();
             if (response && response.status !== 404) {
               setError(response?.data?.error || `Failed to load meeting (Status: ${response.status})`);
             }
-            setMeetingTitle('New Meeting');
+            // Preserve manually set title if present
+            const storedTitle = localStorage.getItem('currentMeetingTitle');
+            const titleManuallySet = localStorage.getItem('titleManuallySet');
+            if (titleManuallySet && storedTitle) {
+              setMeetingTitle(storedTitle);
+            } else {
+              setMeetingTitle('New Meeting');
+            }
             setRawTranscript('');
             rawTranscriptRef.current = '';
             setAnimatedDisplayedTranscript('');
