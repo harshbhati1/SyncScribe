@@ -14,6 +14,15 @@ To ensure that shared summary links (and all client-side routes) work on static 
 
 **This fix is required for shared summary links and all deep links to work in production!**
 
+## Client-Side Routing with _redirects (Static Hosting)
+
+To support client-side routing (e.g., for shared summary links) on static hosts like Render, Netlify, or Vercel:
+
+- The `_redirects` file in `public/` ensures all routes are served by `index.html`.
+- The `postbuild` script in `package.json` copies this file to `build/` after every build.
+- **Do not commit `build/` or `build/_redirects` to git.** The `build/` directory is generated and should remain in `.gitignore`.
+- On deployment, ensure your static host uses the `build/` directory and that `_redirects` is present in the deployed output.
+
 ---
 
 (Other README content below...) 
