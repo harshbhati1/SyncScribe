@@ -881,9 +881,16 @@ const Transcription = () => {  const { currentUser } = useAuth();
         setTranscriptionSegments([]);
         setChatMessages([]);
         setSummary(null);
-        setMeetingTitle('New Meeting');
-        localStorage.removeItem('currentMeetingId');
-        localStorage.removeItem('titleManuallySet');
+        // Only reset title if not manually set or user has not set a new title
+        const storedTitle = localStorage.getItem('currentMeetingTitle');
+        const titleManuallySet = localStorage.getItem('titleManuallySet');
+        if ((titleManuallySet && storedTitle) || (newTitle && newTitle.trim())) {
+          setMeetingTitle(storedTitle || newTitle);
+        } else {
+          setMeetingTitle('New Meeting');
+          localStorage.removeItem('currentMeetingId');
+          localStorage.removeItem('titleManuallySet');
+        }
       }
     };
     loadMeetingData();
