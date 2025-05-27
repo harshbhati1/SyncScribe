@@ -423,8 +423,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
         
         // Update title from summary if needed
         if (response.data.summary.title && 
-            (meetingTitle === 'New Meeting' || 
-             meetingTitle.startsWith('Meeting '))) {
+            meetingTitle === 'New Meeting') {
           const newTitleFromSummary = response.data.summary.title;
           setMeetingTitle(newTitleFromSummary);
           localStorage.setItem('currentMeetingTitle', newTitleFromSummary);
@@ -543,8 +542,7 @@ const Transcription = () => {  const { currentUser } = useAuth();
       if (
         finalSummary &&
         finalSummary.title &&
-        (finalTitle === 'New Meeting' ||
-          finalTitle.startsWith('Meeting '))
+        finalTitle === 'New Meeting'
       ) {
         finalTitle = finalSummary.title;
         setMeetingTitle(finalTitle);
