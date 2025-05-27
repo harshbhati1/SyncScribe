@@ -223,29 +223,20 @@ const Transcription = () => {  const { currentUser } = useAuth();
     if (meetingId) {
       const storedMeetingId = localStorage.getItem('currentMeetingId');
       const storedMeetingTitle = localStorage.getItem('currentMeetingTitle');
-      
-      // Use stored title if available
-      if (storedMeetingId === meetingId && storedMeetingTitle) {
+      const titleManuallySet = localStorage.getItem('titleManuallySet');
+      // Use stored title if available and manually set
+      if (storedMeetingId === meetingId && storedMeetingTitle && titleManuallySet) {
+        setMeetingTitle(storedMeetingTitle);
+      } else if (storedMeetingId === meetingId && storedMeetingTitle) {
         setMeetingTitle(storedMeetingTitle);
       } else {
-        // If no stored title, try to fetch from API or use generic name
         setMeetingTitle(`Meeting ${meetingId}`);
-        
-        // In a real implementation, you would fetch the meeting details
-        // from your API here to get the actual title
-        
-        // Example of how you might fetch the meeting title:
-        // transcriptionAPI.getMeeting(meetingId).then(response => {
-        //   if (response?.data?.title) {
-        //     setMeetingTitle(response.data.title);
-        //     localStorage.setItem('currentMeetingId', meetingId);
-        //     localStorage.setItem('currentMeetingTitle', response.data.title);
-        //   }
-        // }).catch(err => console.error('Error fetching meeting title:', err));
       }
     } else {
-      // For a new meeting
-      setMeetingTitle(localStorage.getItem('currentMeetingTitle') || 'New Meeting');
+      // For a new meeting, always use manually set title if present
+      const storedTitle = localStorage.getItem('currentMeetingTitle');
+      const titleManuallySet = localStorage.getItem('titleManuallySet');
+      setMeetingTitle((titleManuallySet && storedTitle) ? storedTitle : 'New Meeting');
     }
   }, [meetingId]);
   // Title editing handlers
@@ -433,13 +424,10 @@ const Transcription = () => {  const { currentUser } = useAuth();
         // Update title from summary if needed
         if (response.data.summary.title && 
             (meetingTitle === 'New Meeting' || 
-             meetingTitle.startsWith('Meeting ') || 
-             !localStorage.getItem('titleManuallySet'))) {
-          
+             meetingTitle.startsWith('Meeting '))) {
           const newTitleFromSummary = response.data.summary.title;
           setMeetingTitle(newTitleFromSummary);
           localStorage.setItem('currentMeetingTitle', newTitleFromSummary);
-          
           if (meetingId) {
             try {
               await transcriptionAPI.updateMeetingTitle(meetingId, newTitleFromSummary);
@@ -555,9 +543,8 @@ const Transcription = () => {  const { currentUser } = useAuth();
       if (
         finalSummary &&
         finalSummary.title &&
-        (meetingTitle === 'New Meeting' ||
-          meetingTitle.startsWith('Meeting ') ||
-          !localStorage.getItem('titleManuallySet'))
+        (finalTitle === 'New Meeting' ||
+          finalTitle.startsWith('Meeting '))
       ) {
         finalTitle = finalSummary.title;
         setMeetingTitle(finalTitle);
