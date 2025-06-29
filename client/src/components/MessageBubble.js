@@ -8,7 +8,7 @@ import PersonIcon from '@mui/icons-material/Person';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 
 /**
- * Enhanced Message Bubble component for TwinMind chat
+ * Enhanced Message Bubble component for SyncScribe chat
  * Creates consistent styling for user and AI messages
  */
 const MessageBubble = ({ message, cleanMarkdownFormatting }) => {

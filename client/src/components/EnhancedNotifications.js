@@ -8,7 +8,7 @@ import {
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 
-// Custom styled Alert component with TwinMind theme
+// Custom styled Alert component with SyncScribe theme
 const Alert = styled(MuiAlert)(({ theme, severity }) => ({
   borderRadius: '12px',
   boxShadow: severity === 'error' 
@@ -46,7 +46,7 @@ const Alert = styled(MuiAlert)(({ theme, severity }) => ({
 }));
 
 /**
- * Enhanced notification component for TwinMind
+ * Enhanced notification component for SyncScribe
  * Handles error, info, and success messages with consistent styling
  */
 const EnhancedNotifications = ({ 

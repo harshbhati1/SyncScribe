@@ -341,7 +341,7 @@ const GoogleCalendarView = () => {
             Connect to Google Calendar
           </Typography>
           <Typography variant="body1" sx={{ mb: 4, textAlign: 'center', maxWidth: 500, color: '#64748b' }}>
-            Connect your Google Calendar to view your scheduled meetings and quickly create TwinMind meetings for them.
+            Connect your Google Calendar to view your scheduled meetings and quickly create SyncScribe meetings for them.
           </Typography>
           <ConnectButton 
             onClick={connectToGoogleCalendar}
@@ -431,7 +431,7 @@ const GoogleCalendarView = () => {
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Would you like to create a new TwinMind meeting for this calendar event?
+            Would you like to create a new SyncScribe meeting for this calendar event?
             The meeting will be titled "{selectedEvent?.title}".
           </DialogContentText>
         </DialogContent>

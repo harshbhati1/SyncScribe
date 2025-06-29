@@ -978,7 +978,7 @@ const Dashboard = () => {
                   WebkitTextFillColor: 'transparent'
                 }}
               >
-                TwinMind
+              SyncScribe
               </Typography>
             </Box>          </Toolbar>
           

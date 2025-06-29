@@ -45,7 +45,7 @@ import EnhancedNotifications from './EnhancedNotifications';
 import EmptyState from './EmptyState';
 import MessageBubble from './MessageBubble';
 
-// Styled components with enhanced TwinMind theme colors
+// Styled components with enhanced SyncScribe theme colors
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
   backgroundColor: '#ffffff',
   boxShadow: '0 3px 8px rgba(11, 79, 117, 0.08)',

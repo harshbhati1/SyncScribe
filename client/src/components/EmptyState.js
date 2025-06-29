@@ -10,7 +10,7 @@ import ChatIcon from '@mui/icons-material/Chat';
 import SummarizeIcon from '@mui/icons-material/Summarize';
 
 /**
- * Enhanced Empty State component for TwinMind
+ * Enhanced Empty State component for SyncScribe
  * Used to display informative messages when content is not available
  */
 const EmptyState = ({ 

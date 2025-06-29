@@ -280,7 +280,7 @@ const SharedSummary = () => {
 
       <Box textAlign="center" mt={4}>
         <Typography variant="body2" color="text.secondary" gutterBottom>
-          This summary was shared via TwinMind
+          This summary was shared via SyncScribe
         </Typography>
         <Button 
           variant="contained" 

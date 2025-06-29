@@ -10,7 +10,7 @@ import SendIcon from '@mui/icons-material/Send';
 
 /**
  * Enhanced Chat Input component with improved styling and animations
- * Matches the TwinMind dashboard design system
+ * Matches the SyncScribe dashboard design system
  */
 const EnhancedChatInput = ({ 
   chatQuery, 
