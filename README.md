@@ -50,6 +50,7 @@ SyncScribe isn't just a meeting recorder—it’s a smart, AI-powered productivi
 * **Backend:** Node.js, Express.js, Firebase Authentication, Firestore (Database), Google Gemini API.
 * **Audio Processing:** Web Audio API, MediaRecorder API, `ffmpeg.wasm`.
 * **Deployment:** Render (for both frontend static site and backend web service).
+* [View Project Report](https://github.com/harshbhati1/SyncScribe/blob/main/Project_Report.pdf)
 
 ## 🏁 Getting Started
 
