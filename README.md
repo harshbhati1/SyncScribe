@@ -1,14 +1,13 @@
-# TwinMind 🧠✨
+# SyncScribe 🧠✨
 
-TwinMind is an intelligent web application designed to revolutionize your meeting productivity. It offers seamless, AI-driven real-time meeting transcription, allows you to chat interactively with your meeting transcripts, and generates smart, structured summaries. TwinMind bridges the gap between live meetings, calendar events, and actionable insights, all within a modern, user-friendly interface.
+SyncScribe is an intelligent web application designed to revolutionize your meeting productivity. It offers seamless, AI-driven real-time meeting transcription, allows you to chat interactively with your meeting transcripts, and generates smart, structured summaries. SyncScribe bridges the gap between live meetings, calendar events, and actionable insights, all within a modern, user-friendly interface.
 
 **Live Demo:**
-* **Frontend:** [https://twinmind-front.onrender.com](https://twinmind-front.onrender.com)
-* **Backend Service:** [https://twinmind-14ro.onrender.com](https://twinmind-14ro.onrender.com) (API endpoint)
+* **Access Link:** [https://syncscribe.me](https://syncscribe.me)
 
 ## 🚀 Key Features
 
-TwinMind isn't just a meeting recorder—it’s a smart, AI-powered productivity tool. Here’s what sets it apart:
+SyncScribe isn't just a meeting recorder—it’s a smart, AI-powered productivity tool. Here’s what sets it apart:
 
 1.  **Seamless AI-Driven Meeting Experience:**
     * **Live Transcription:** Record meetings and get real-time, AI-powered transcriptions.
@@ -17,7 +16,7 @@ TwinMind isn't just a meeting recorder—it’s a smart, AI-powered productivity
 
 2.  **Deep Google Calendar Integration:**
     * **Secure OAuth2 Flow:** Connects to Google Calendar using industry-standard OAuth2.
-    * **Event-Driven Meeting Creation:** Create new TwinMind meetings directly from calendar events, automatically using the event’s title.
+    * **Event-Driven Meeting Creation:** Create new SyncScribe meetings directly from calendar events, automatically using the event’s title.
     * **Unified Dashboard:** Access calendar events and recorded meetings from a single, modern dashboard.
 
 3.  **Advanced Audio Handling & Visualization:**
@@ -67,8 +66,8 @@ TwinMind isn't just a meeting recorder—it’s a smart, AI-powered productivity
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/harshbhati1/TwinMind.git](https://github.com/harshbhati1/TwinMind.git)
-    cd TwinMind
+    git clone [https://github.com/harshbhati1/SyncScribe.git](https://github.com/harshbhati1/SyncScribe.git)
+    cd SyncScribe
     ```
 
 2.  **Install Server Dependencies:**
@@ -123,7 +122,7 @@ TwinMind isn't just a meeting recorder—it’s a smart, AI-powered productivity
 
 ### Running the Application
 
-You can start both the client and server together using the `start-twinmind.bat` script (on Windows) or run them separately:
+You can start both the client and server together using the `start-SyncScribe.bat` script (on Windows) or run them separately:
 
 1.  **Start the Backend Server:**
     ```bash
