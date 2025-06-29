@@ -148,7 +148,7 @@ const Login = () => {
     <LoginContainer>
       <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
         <LogoContainer>
-          <Logo>twin mind</Logo>
+          <Logo>SyncScribe</Logo>
         </LogoContainer>
 
         <Container maxWidth="xs" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
